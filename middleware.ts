@@ -8,11 +8,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Protect other admin routes - check for session cookie
-  if (pathname.startsWith('/admin')) {
+  // Protect admin pages and admin API routes from unauthenticated browser access.
+  // API handlers still validate the session token server-side.
+  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
     const adminToken = request.cookies.get('adminToken')?.value
 
     if (!adminToken) {
+      if (pathname.startsWith('/api/admin')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
       return NextResponse.redirect(new URL('/admin/login', request.url))
     }
   }
@@ -21,5 +25,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*'],
 }

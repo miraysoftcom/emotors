@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { categories } from '@/lib/db/schema'
 import { eq, asc } from 'drizzle-orm'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 
 // Admin authentication check
 function isAdmin(req: NextRequest): boolean {
-  const adminToken = req.cookies.get('adminToken')?.value
-  return !!adminToken
+  return isAdminRequestAuthorized(req.cookies.get('adminToken')?.value)
 }
 
 export async function GET(req: NextRequest) {

@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
-import { getSession } from '@/lib/admin-auth'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 import { updateStoredOrder } from '@/lib/orders-store'
 import { getInvoices, updateInvoice, type InvoiceRecord } from '@/lib/invoice-store'
 import { db } from '@/lib/db'
 import { orders as orderTable } from '@/lib/db/schema'
 
 function assertAdmin(request: NextRequest) {
-  const token = request.cookies.get('adminToken')?.value
-  if (!token) return false
-  return Boolean(getSession(token) || token.length >= 32)
+  return isAdminRequestAuthorized(request.cookies.get('adminToken')?.value)
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

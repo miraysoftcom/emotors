@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteAnnouncement, getAnnouncements, upsertAnnouncement } from '@/lib/announcements-store'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 
 function isAdmin(request: NextRequest) {
-  return Boolean(request.cookies.get('adminToken')?.value)
+  return isAdminRequestAuthorized(request.cookies.get('adminToken')?.value)
 }
 
 export async function GET(request: NextRequest) {

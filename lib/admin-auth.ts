@@ -1,17 +1,22 @@
 import crypto from 'crypto'
 
+const PBKDF2_ITERATIONS = 210000
+
 // Hash password with salt
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex')
+  const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex')
   return `${salt}:${hash}`
 }
 
 // Verify password against hash
 export function verifyPassword(password: string, hash: string): boolean {
   const [salt, original] = hash.split(':')
-  const newHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex')
-  return newHash === original
+  if (!salt || !original) return false
+  const newHash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex')
+  const expected = Buffer.from(original, 'hex')
+  const actual = Buffer.from(newHash, 'hex')
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
 }
 
 // Generate session token
@@ -119,10 +124,20 @@ export interface AdminCredentials {
 }
 
 let adminCredentials: AdminCredentials = {
-  passwordHash: hashPassword('Blevh4np1@@'), // Initial password
+  passwordHash: getInitialAdminPasswordHash(),
   lastChanged: Date.now(),
   enabled: true,
   loginHistory: [],
+}
+
+function getInitialAdminPasswordHash() {
+  if (process.env.ADMIN_PASSWORD_HASH) return process.env.ADMIN_PASSWORD_HASH
+  if (process.env.ADMIN_PASSWORD) return hashPassword(process.env.ADMIN_PASSWORD)
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[Admin Auth] ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is required in production. Admin login is disabled.')
+    return hashPassword(crypto.randomBytes(48).toString('hex'))
+  }
+  return hashPassword('Blevh4np1@@')
 }
 
 // Get admin credentials
@@ -157,4 +172,8 @@ export function recordLoginHistory(success: boolean, ip?: string): void {
 // Get login history
 export function getLoginHistory(limit: number = 50): AdminCredentials['loginHistory'] {
   return adminCredentials.loginHistory.slice(-limit)
+}
+
+export function isAdminRequestAuthorized(token?: string | null): boolean {
+  return Boolean(token && getSession(token))
 }

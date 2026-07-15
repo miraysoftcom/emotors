@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/admin-auth'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 import { createInvoiceForOrder, getInvoices } from '@/lib/invoice-store'
 import { getStoredOrders, updateStoredOrder } from '@/lib/orders-store'
 
 function assertAdmin(request: NextRequest) {
-  const token = request.cookies.get('adminToken')?.value
-  if (!token) return false
-  return Boolean(getSession(token) || token.length >= 32)
+  return isAdminRequestAuthorized(request.cookies.get('adminToken')?.value)
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

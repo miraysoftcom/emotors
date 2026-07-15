@@ -134,6 +134,9 @@ Ornek icerik:
 ```env
 NEXT_PUBLIC_SITE_URL=https://example.com
 AUTH_SECRET=buraya-cok-guclu-bir-secret-yaz
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=buraya-cok-guclu-bir-admin-sifresi-yaz
+SETUP_SECRET=buraya-gecici-cok-guclu-bir-kurulum-anahtari-yaz
 DATABASE_URL=
 ```
 
@@ -146,6 +149,14 @@ CTRL + X
 ```
 
 Onemli: `.env.local` dosyasini kimseyle paylasma.
+
+Canli sistemde kolay admin sifresi kullanma. Guclu rastgele deger uretmek icin:
+
+```bash
+openssl rand -base64 32
+```
+
+Kurulum bittikten sonra `SETUP_SECRET` degerini silebilir veya degistirebilirsin.
 
 ## 9. Projeyi Kur
 

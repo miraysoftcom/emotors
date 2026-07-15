@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 import { db } from '@/lib/db'
 import { customers } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
 
 // Check if user is authenticated as admin
 async function isAdmin(req: NextRequest) {
-  const session = await auth.api.getSession({
-    headers: req.headers,
-  })
-
-  if (!session?.user) {
-    return false
-  }
-
-  // TODO: Check if user has admin role
-  return true
+  return isAdminRequestAuthorized(req.cookies.get('adminToken')?.value)
 }
 
 // GET all customers

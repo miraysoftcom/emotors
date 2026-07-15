@@ -70,7 +70,7 @@ pnpm start
 
 - **Customer Site:** http://localhost:3000
 - **Admin Login:** http://localhost:3000/admin/login
-- **Default Admin Password:** `Blevh4np1@@`
+- **Admin Password:** Set `ADMIN_PASSWORD` or `ADMIN_PASSWORD_HASH` in your server environment before production deployment.
 
 ## Project Structure
 
@@ -141,7 +141,9 @@ The application uses a comprehensive database schema supporting:
 DATABASE_URL=postgresql://user:pass@host:5432/mk-emotors
 
 # Admin Authentication
+ADMIN_PASSWORD=<strong-random-admin-password>
 ADMIN_PASSWORD_HASH=<pbkdf2-hash>
+SETUP_SECRET=<temporary-random-setup-secret>
 
 # Optional: Third-party services
 STRIPE_PUBLIC_KEY=
@@ -152,7 +154,11 @@ SENTRY_DSN=
 
 ## Security Features
 
-- PBKDF2 password hashing with 1000 iterations
+- PBKDF2 password hashing with 210000 iterations
+- Timing-safe admin password comparison
+- Admin APIs require a valid admin session token
+- Setup endpoints require `SETUP_SECRET`
+- Product uploads require admin authentication and reject SVG files
 - HTTP-only secure cookies
 - CSRF protection with SameSite=strict
 - Input validation and sanitization
@@ -217,7 +223,7 @@ pnpm format      # Format code with Prettier
 
 For first-time admin access:
 - **Username:** Admin
-- **Password:** `Blevh4np1@@` (change immediately in production)
+- **Password:** Use the value configured in `ADMIN_PASSWORD` or create an `ADMIN_PASSWORD_HASH`.
 
 To change admin password:
 1. Log in to admin

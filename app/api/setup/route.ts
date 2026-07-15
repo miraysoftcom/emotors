@@ -3,11 +3,15 @@ import { db } from '@/lib/db'
 import { user, account } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { assertSetupAllowed } from '@/lib/setup-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
+    const blocked = assertSetupAllowed(req)
+    if (blocked) return blocked
+
     if (!db) {
       return NextResponse.json(
         { error: 'Database not configured' },
@@ -15,8 +19,14 @@ export async function POST(req: Request) {
       )
     }
 
-    const email = 'info@mk-emotorsdornach.ch'
-    const password = 'Blevh4np1@@'
+    const email = process.env.ADMIN_EMAIL || ''
+    const password = process.env.ADMIN_PASSWORD || ''
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'ADMIN_EMAIL and ADMIN_PASSWORD are required for setup.' },
+        { status: 400 }
+      )
+    }
 
     // Check if admin user already exists
     const existingUser = await db.query.user.findFirst({
