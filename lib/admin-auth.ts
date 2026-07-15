@@ -1,6 +1,9 @@
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 
 const PBKDF2_ITERATIONS = 210000
+const SESSION_FILE = path.join(process.cwd(), '.data', 'admin-sessions.json')
 
 // Hash password with salt
 export function hashPassword(password: string): string {
@@ -37,6 +40,33 @@ const SESSION_TIMEOUT = 24 * 60 * 60 * 1000 // 24 hours
 const MAX_LOGIN_ATTEMPTS = 5
 const ATTEMPT_WINDOW = 15 * 60 * 1000 // 15 minutes
 
+function ensureSessionStore() {
+  const dir = path.dirname(SESSION_FILE)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+}
+
+function loadPersistedSessions() {
+  ensureSessionStore()
+  if (!fs.existsSync(SESSION_FILE)) return
+  try {
+    const rows = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')) as AdminSession[]
+    SESSIONS.clear()
+    for (const session of rows) {
+      if (session.token && Date.now() <= session.expiresAt) {
+        SESSIONS.set(session.token, session)
+      }
+    }
+  } catch {
+    SESSIONS.clear()
+  }
+}
+
+function persistSessions() {
+  ensureSessionStore()
+  const rows = Array.from(SESSIONS.values()).filter((session) => Date.now() <= session.expiresAt)
+  fs.writeFileSync(SESSION_FILE, JSON.stringify(rows, null, 2))
+}
+
 // Track failed login attempts
 const failedAttempts = new Map<string, { count: number; timestamp: number }>()
 
@@ -72,23 +102,27 @@ export function clearFailedAttempts(identifier: string): void {
 
 // Create session
 export function createSession(token: string): AdminSession {
+  loadPersistedSessions()
   const session: AdminSession = {
     token,
     createdAt: Date.now(),
     expiresAt: Date.now() + SESSION_TIMEOUT,
   }
   SESSIONS.set(token, session)
+  persistSessions()
   return session
 }
 
 // Get session
 export function getSession(token: string): AdminSession | null {
+  loadPersistedSessions()
   const session = SESSIONS.get(token)
   if (!session) return null
 
   // Check if session expired
   if (Date.now() > session.expiresAt) {
     SESSIONS.delete(token)
+    persistSessions()
     return null
   }
 
@@ -97,7 +131,9 @@ export function getSession(token: string): AdminSession | null {
 
 // Destroy session
 export function destroySession(token: string): void {
+  loadPersistedSessions()
   SESSIONS.delete(token)
+  persistSessions()
 }
 
 // Get all sessions (for admin settings)
@@ -107,12 +143,14 @@ export function getAllSessions(): AdminSession[] {
 
 // Cleanup expired sessions
 export function cleanupExpiredSessions(): void {
+  loadPersistedSessions()
   const now = Date.now()
   for (const [token, session] of SESSIONS.entries()) {
     if (now > session.expiresAt) {
       SESSIONS.delete(token)
     }
   }
+  persistSessions()
 }
 
 // Admin credentials storage (in production, use database)

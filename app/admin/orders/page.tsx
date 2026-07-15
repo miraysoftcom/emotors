@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Eye, Loader, Save, FileText } from 'lucide-react'
+import { Search, Eye, Loader, Save, FileText, Trash2 } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { HtmlEditor } from '@/components/admin/HtmlEditor'
 
@@ -46,6 +46,7 @@ export default function OrdersPage() {
   const [paymentFilter, setPaymentFilter] = useState('ALL')
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [savingId, setSavingId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error' | ''; text: string }>({ type: '', text: '' })
 
   useEffect(() => {
@@ -55,10 +56,16 @@ export default function OrdersPage() {
   const loadOrders = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/admin/orders')
+      const res = await fetch('/api/admin/orders', { credentials: 'include', cache: 'no-store' })
+      if (res.status === 401) {
+        window.location.href = '/admin/login'
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setOrders(data.orders || [])
+      } else {
+        setMessage({ type: 'error', text: 'Bestellungen konnten nicht geladen werden.' })
       }
     } catch (error) {
       console.error('[Load Orders Error]', error)
@@ -114,6 +121,10 @@ export default function OrdersPage() {
         }),
       })
       const data = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        window.location.href = '/admin/login'
+        return
+      }
       if (!response.ok) {
         setMessage({ type: 'error', text: data.error || 'Bestellung konnte nicht gespeichert werden.' })
         return
@@ -124,6 +135,36 @@ export default function OrdersPage() {
       setMessage({ type: 'error', text: 'Bestellung konnte nicht gespeichert werden.' })
     } finally {
       setSavingId(null)
+    }
+  }
+
+  const deleteOrder = async (order: Order) => {
+    const confirmed = window.confirm(`Bestellung ${order.orderNumber} wirklich löschen? Diese Aktion entfernt auch die lokal erzeugte Rechnung.`)
+    if (!confirmed) return
+
+    setDeletingId(order.id)
+    setMessage({ type: '', text: '' })
+    try {
+      const response = await fetch(`/api/admin/orders/${order.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        window.location.href = '/admin/login'
+        return
+      }
+      if (!response.ok) {
+        setMessage({ type: 'error', text: data.error || 'Bestellung konnte nicht gelöscht werden.' })
+        return
+      }
+      setOrders((current) => current.filter((item) => item.id !== order.id))
+      setExpandedId((current) => current === order.id ? null : current)
+      setMessage({ type: 'success', text: `Bestellung ${order.orderNumber} wurde gelöscht.` })
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Bestellung konnte nicht gelöscht werden.' })
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -252,6 +293,14 @@ export default function OrdersPage() {
                       </button>
                       <button onClick={() => saveOrder(order)} disabled={savingId === order.id} className="p-2 hover:bg-secondary rounded-lg transition-colors" title="Speichern">
                         {savingId === order.id ? <Loader size={16} className="animate-spin" /> : <Save size={16} />}
+                      </button>
+                      <button
+                        onClick={() => deleteOrder(order)}
+                        disabled={deletingId === order.id}
+                        className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Löschen"
+                      >
+                        {deletingId === order.id ? <Loader size={16} className="animate-spin" /> : <Trash2 size={16} />}
                       </button>
                     </td>
                   </tr>

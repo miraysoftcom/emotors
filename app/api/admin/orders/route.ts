@@ -9,8 +9,13 @@ import { getEnabledPaymentMethods, getShopSettings } from '@/lib/shop-settings-s
 import { getStoredProducts } from '@/lib/products-store'
 import { resolveProductPrice, type ProductPriceSource } from '@/lib/product-price'
 import { calculateOrderTax, getTaxSettings } from '@/lib/tax-settings-store'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!isAdminRequestAuthorized(request.cookies.get('adminToken')?.value)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const storedOrders = getStoredOrders()
     if (!db) return NextResponse.json({ orders: storedOrders })

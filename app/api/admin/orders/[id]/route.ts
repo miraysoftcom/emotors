@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { isAdminRequestAuthorized } from '@/lib/admin-auth'
-import { updateStoredOrder } from '@/lib/orders-store'
-import { getInvoices, updateInvoice, type InvoiceRecord } from '@/lib/invoice-store'
+import { deleteStoredOrder, updateStoredOrder } from '@/lib/orders-store'
+import { deleteInvoicesForOrder, getInvoices, updateInvoice, type InvoiceRecord } from '@/lib/invoice-store'
 import { db } from '@/lib/db'
 import { orders as orderTable } from '@/lib/db/schema'
 
@@ -69,6 +69,39 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   return NextResponse.json({ order })
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!assertAdmin(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { id } = await params
+  const orderId = Number(id)
+  if (!Number.isFinite(orderId) || orderId <= 0) {
+    return NextResponse.json({ error: 'Ungültige Bestellung.' }, { status: 400 })
+  }
+
+  const deletedStoredOrder = deleteStoredOrder(orderId)
+  if (deletedStoredOrder) {
+    deleteInvoicesForOrder(deletedStoredOrder.id, deletedStoredOrder.orderNumber)
+    return NextResponse.json({ deleted: true, order: deletedStoredOrder })
+  }
+
+  if (db) {
+    const deletedRows = await db
+      .delete(orderTable)
+      .where(eq(orderTable.id, orderId))
+      .returning()
+
+    const deletedOrder = deletedRows[0] as { id: number; orderNumber?: string } | undefined
+    if (deletedOrder) {
+      deleteInvoicesForOrder(deletedOrder.id, deletedOrder.orderNumber)
+      return NextResponse.json({ deleted: true, order: deletedOrder })
+    }
+  }
+
+  return NextResponse.json({ error: 'Bestellung nicht gefunden.' }, { status: 404 })
 }
 
 function resolveInvoiceStatus(orderStatus?: string, paymentStatus?: string): InvoiceRecord['status'] {

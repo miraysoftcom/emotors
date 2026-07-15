@@ -277,6 +277,14 @@ export function updateInvoice(id: number, data: Partial<InvoiceRecord>) {
   return updated
 }
 
+export function deleteInvoicesForOrder(orderId: number, orderNumber?: string) {
+  const invoices = getInvoices()
+  const removed = invoices.filter((invoice) => invoice.orderId === orderId || (orderNumber && invoice.orderNumber === orderNumber))
+  if (removed.length === 0) return []
+  writeInvoices(invoices.filter((invoice) => !(invoice.orderId === orderId || (orderNumber && invoice.orderNumber === orderNumber))))
+  return removed
+}
+
 function nextInvoiceNumber(settings: InvoiceSettings) {
   const year = new Date().getFullYear()
   const next = settings.lastInvoiceNumber + 1

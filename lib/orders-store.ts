@@ -179,6 +179,14 @@ export function updateStoredOrder(id: number, data: Partial<StoredOrder>) {
   return updated
 }
 
+export function deleteStoredOrder(id: number) {
+  const orders = getStoredOrders()
+  const existing = orders.find((order) => order.id === id)
+  if (!existing) return null
+  saveOrders(orders.filter((order) => order.id !== id))
+  return existing
+}
+
 function getStatusDescription(status: string) {
   const descriptions: Record<string, string> = {
     'Bestellung eingegangen': 'Ihre Bestellung ist bei uns eingegangen.',
