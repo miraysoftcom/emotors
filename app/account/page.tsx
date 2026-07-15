@@ -53,6 +53,7 @@ import { formatMoney } from '@/lib/money'
 import { calculateCustomerLoyaltyPoints, LOYALTY_POINTS_PER_CHF, loyaltyPointsToChf } from '@/lib/loyalty-points'
 import { OrderSummaryView } from '@/components/orders/OrderSummaryView'
 import type { CustomerAccountRecord } from '@/lib/customer-account-store'
+import type { CustomerRequestRecord } from '@/lib/customer-request-store'
 import type { InvoiceRecord } from '@/lib/invoice-store'
 import type { StoredOrder } from '@/lib/orders-store'
 
@@ -61,6 +62,7 @@ type AccountPayload = {
   account: CustomerAccountRecord
   orders: StoredOrder[]
   invoices: InvoiceRecord[]
+  requests: CustomerRequestRecord[]
 }
 
 type RewardPayment = {
@@ -242,8 +244,13 @@ export default function AccountPage() {
   const [compareItems, setCompareItems] = useState<CompareItem[]>([])
   const [requestForm, setRequestForm] = useState({
     product: '',
+    vehicleType: 'E-Scooter',
+    serviceCategory: 'Wartung & Sicherheitscheck',
+    urgency: 'Normal',
     orderNumber: '',
     serialNumber: '',
+    preferredDate: '',
+    handover: 'Vor Ort in Dornach',
     subject: '',
     message: '',
     phone: '',
@@ -619,8 +626,13 @@ export default function AccountPage() {
         message: requestForm.message,
         payload: {
           product: requestForm.product,
+          vehicleType: requestForm.vehicleType,
+          serviceCategory: requestForm.serviceCategory,
+          urgency: requestForm.urgency,
           orderNumber: requestForm.orderNumber,
           serialNumber: requestForm.serialNumber,
+          preferredDate: requestForm.preferredDate,
+          handover: requestForm.handover,
         },
       }),
     })
@@ -630,8 +642,21 @@ export default function AccountPage() {
       setMessage(data.error || 'Anfrage konnte nicht gesendet werden.')
       return
     }
-    setRequestForm({ product: '', orderNumber: '', serialNumber: '', subject: '', message: '', phone: '' })
+    setRequestForm({
+      product: '',
+      vehicleType: 'E-Scooter',
+      serviceCategory: 'Wartung & Sicherheitscheck',
+      urgency: 'Normal',
+      orderNumber: '',
+      serialNumber: '',
+      preferredDate: '',
+      handover: 'Vor Ort in Dornach',
+      subject: '',
+      message: '',
+      phone: '',
+    })
     setMessage(data.message || 'Anfrage wurde erfolgreich gesendet.')
+    if (effectiveEmail) await loadAccount(effectiveEmail, { silent: true })
   }
 
   async function submitTradeInRequest(event: FormEvent) {
@@ -1082,6 +1107,7 @@ export default function AccountPage() {
                     <QuickTile icon={Receipt} title="Rechnungen" text={`${accountData?.invoices.length || 0} Rechnung(en)`} onClick={() => setActiveTab('invoices')} />
                     <QuickTile icon={Heart} title="Favoriten" text={`${favoriteItems.length} gespeicherte Modelle`} onClick={() => setActiveTab('wishlist')} />
                     <QuickTile icon={Scale} title="Vergleich" text={`${compareItems.length} Produkt(e) im Vergleich`} onClick={() => setActiveTab('compare')} />
+                    <QuickTile icon={Wrench} title="Service Center" text={`${accountData?.requests?.filter((item) => item.type === 'service' && item.status !== 'done').length || 0} offene Servicefälle`} onClick={() => setActiveTab('service')} />
                     <QuickTile icon={Calculator} title="Kostenvoranschlag" text="Online Termin für E-Motors & E-Scooter" onClick={() => setActiveTab('estimate')} />
                     <QuickTile icon={Shield} title="Garantie" text="Service- und Garantiefälle starten" onClick={() => setActiveTab('warranty')} />
                     <QuickTile icon={Gift} title="Coupons" text="Gutscheine und Treuepunkte" onClick={() => setActiveTab('rewards')} />
@@ -1248,6 +1274,8 @@ export default function AccountPage() {
                   onService={(event) => submitCustomerRequest(event, 'service')}
                   form={requestForm}
                   loading={loading}
+                  requests={accountData?.requests?.filter((item) => item.type === 'service') || []}
+                  products={products}
                   onChange={(field, value) => setRequestForm((current) => ({ ...current, [field]: value }))}
                 />
               )}
@@ -2296,7 +2324,19 @@ function TradeInPanel({
   )
 }
 
-type RequestFormState = { product: string; orderNumber: string; serialNumber: string; subject: string; message: string; phone: string }
+type RequestFormState = {
+  product: string
+  vehicleType: string
+  serviceCategory: string
+  urgency: string
+  orderNumber: string
+  serialNumber: string
+  preferredDate: string
+  handover: string
+  subject: string
+  message: string
+  phone: string
+}
 
 function CustomerRequestPanel({
   icon: Icon,
@@ -2438,42 +2478,235 @@ function formatDate(value: string) {
 function ServiceMapPanel({
   form,
   loading,
+  requests,
+  products,
   onChange,
   onWarranty,
   onService,
 }: {
   form: RequestFormState
   loading: boolean
+  requests: CustomerRequestRecord[]
+  products: ShopProduct[]
   onChange: (field: keyof RequestFormState, value: string) => void
   onWarranty: () => void
   onService: (event: FormEvent) => void
 }) {
   const points = [
-    { name: 'MK-eMotors Dornach', address: 'Hauptstrasse 10, 4143 Dornach', type: 'Showroom & Service' },
-    { name: 'Basel Abholpunkt', address: 'Aeschenvorstadt, 4051 Basel', type: 'Abholung nach Termin' },
-    { name: 'Nordwestschweiz Mobile Service', address: 'Basel-Land / Solothurn', type: 'Mobiler Service' },
+    { name: 'MK-eMotors Dornach', address: 'Bruggweg 15, 4143 Dornach', type: 'Werkstatt, Diagnose & Übergabe' },
+    { name: 'Basel Abholpunkt', address: 'Aeschenvorstadt, 4051 Basel', type: 'Abholung nur nach Termin' },
+    { name: 'Nordwestschweiz Mobile Service', address: 'Basel-Land / Solothurn', type: 'Mobiler Service nach Verfügbarkeit' },
+  ]
+  const activeRequests = requests.filter((request) => request.status !== 'done').length
+  const serviceCategories = [
+    'Wartung & Sicherheitscheck',
+    'Reparatur / Diagnose',
+    'Akku & Ladegerät',
+    'Bremsen / Reifen / Fahrwerk',
+    'Controller / Display / Software',
+    'Abholung & Rücktransport',
+    'Sonstiger Service',
+  ]
+  const vehicleTypes = ['E-Scooter', 'E-Moped', 'E-Motorrad', 'E-Bike', 'Zubehör / Ersatzteil']
+  const urgencies = ['Normal', 'Schnell', 'Fahrzeug steht', 'Unfall / Sicherheitsrelevant']
+  const handoverOptions = ['Vor Ort in Dornach', 'Abholung Basel', 'Mobiler Service', 'Rückruf zur Terminplanung']
+
+  const statusLabels: Record<CustomerRequestRecord['status'], string> = {
+    new: 'Eingegangen',
+    in_review: 'In Bearbeitung',
+    done: 'Abgeschlossen',
+  }
+
+  const statusClass = (status: CustomerRequestRecord['status']) => status === 'done'
+    ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-500 dark:text-emerald-200'
+    : status === 'in_review'
+      ? 'border-amber-400/30 bg-amber-400/10 text-amber-600 dark:text-amber-200'
+      : 'border-accent/30 bg-accent/10 text-accent'
+
+  const formatPayloadValue = (payload: Record<string, unknown> | undefined, key: string) => String(payload?.[key] || '').trim()
+  const formatRequestDate = (value: string) => {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('de-CH')
+  }
+
+  const serviceSteps = [
+    'Anfrage erfassen',
+    'Technische Vorprüfung',
+    'Terminbestätigung',
+    'Service & Übergabe',
   ]
   return (
-    <Panel title="Bayi / Servis noktaları">
-      <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-        <div className="grid gap-3">
-          {points.map((point) => (
-            <div key={point.name} className="rounded-3xl border border-border/60 bg-secondary/40 p-5">
-              <MapPinned className="h-8 w-8 text-accent" />
-              <p className="mt-3 font-black">{point.name}</p>
-              <p className="text-sm text-muted-foreground">{point.address}</p>
-              <p className="mt-2 text-xs font-black uppercase tracking-widest text-accent">{point.type}</p>
+    <Panel title="MK-eMotors Service Center">
+      <div className="space-y-6">
+        <section className="rounded-[2rem] border border-accent/25 bg-gradient-to-br from-accent/15 via-card to-secondary/60 p-5 shadow-2xl shadow-accent/10 md:p-7">
+          <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-accent">
+                <Wrench className="h-4 w-4" />
+                Premium After-Sales
+              </div>
+              <h3 className="mt-5 text-3xl font-black tracking-tight text-foreground md:text-4xl">
+                Service, Diagnose und Reparatur für Ihre Elektromobilität.
+              </h3>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+                Erfassen Sie Ihr Anliegen strukturiert. Unser Team sieht Seriennummer, Fahrzeugtyp, Dringlichkeit und Wunschtermin sofort im Admin-Servicecenter.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <InfoTile title="Offene Fälle" value={String(activeRequests)} detail="Live aus Ihrem Konto" />
+                <InfoTile title="Antworten" value={String(requests.reduce((sum, request) => sum + (request.replies?.length || 0), 0))} detail="Vom Service-Team" />
+                <InfoTile title="Reaktionszeit" value="24h" detail="An Werktagen" />
+              </div>
             </div>
-          ))}
-          <Button variant="outline" onClick={onWarranty}><Wrench className="mr-2 h-4 w-4" />Garantie / Service starten</Button>
+            <div className="rounded-3xl border border-border/60 bg-background/55 p-4 backdrop-blur">
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-muted-foreground">Ablauf</p>
+              <div className="mt-4 grid gap-3">
+                {serviceSteps.map((step, index) => (
+                  <div key={step} className="flex items-center gap-3 rounded-2xl border border-border/50 bg-card/70 p-3">
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent text-sm font-black text-accent-foreground">{index + 1}</span>
+                    <span className="font-bold text-foreground">{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
+          <section className="space-y-4">
+            <div className="rounded-3xl border border-border/60 bg-secondary/40 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-accent">Standorte</p>
+                  <h3 className="mt-2 text-xl font-black">Servicepunkte</h3>
+                </div>
+                <MapPinned className="h-9 w-9 text-accent" />
+              </div>
+              <div className="mt-4 grid gap-3">
+                {points.map((point) => (
+                  <div key={point.name} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+                    <p className="font-black">{point.name}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{point.address}</p>
+                    <p className="mt-2 text-xs font-black uppercase tracking-widest text-accent">{point.type}</p>
+                  </div>
+                ))}
+              </div>
+              <Button variant="outline" onClick={onWarranty} className="mt-4 w-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Garantie prüfen
+              </Button>
+            </div>
+
+            <div className="rounded-3xl border border-border/60 bg-secondary/40 p-5">
+              <p className="font-black">Aktuelle Service-Tickets</p>
+              <div className="mt-4 space-y-3">
+                {requests.length === 0 ? (
+                  <p className="rounded-2xl border border-border/60 bg-card/60 p-4 text-sm text-muted-foreground">
+                    Noch keine Serviceanfrage vorhanden. Nach dem Absenden erscheint Ihr Ticket hier mit Status und Antworten.
+                  </p>
+                ) : requests.slice(0, 5).map((request) => (
+                  <div key={request.id} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-black">{request.subject}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatRequestDate(request.createdAt)}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-black uppercase tracking-widest ${statusClass(request.status)}`}>
+                        {statusLabels[request.status]}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                      <span>{formatPayloadValue(request.payload, 'vehicleType') || 'Fahrzeug'} · {formatPayloadValue(request.payload, 'serviceCategory') || 'Service'}</span>
+                      {request.replies?.[0] && (
+                        <div className="rounded-xl border border-accent/20 bg-accent/10 p-3 text-foreground">
+                          <p className="text-[0.65rem] font-black uppercase tracking-widest text-accent">Antwort vom Service-Team</p>
+                          <div className="managed-page-content mt-1 text-sm" dangerouslySetInnerHTML={{ __html: request.replies[0].message }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <form onSubmit={onService} className="rounded-[2rem] border border-border/60 bg-card/80 p-5 shadow-xl md:p-6">
+            <div className="flex flex-col gap-3 border-b border-border/60 pb-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-accent">Neues Ticket</p>
+                <h3 className="mt-2 text-2xl font-black">Servicetermin anfragen</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Alle technischen Details werden direkt an die Werkstatt übermittelt.</p>
+              </div>
+              <div className="rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-sm font-black text-accent">
+                SSL geschützt
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-bold">
+                Fahrzeugtyp
+                <select value={form.vehicleType} onChange={(event) => onChange('vehicleType', event.target.value)} className="account-input">
+                  {vehicleTypes.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-bold">
+                Serviceart
+                <select value={form.serviceCategory} onChange={(event) => onChange('serviceCategory', event.target.value)} className="account-input">
+                  {serviceCategories.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-bold">
+                Produkt / Modell
+                <select value={form.product} onChange={(event) => onChange('product', event.target.value)} className="account-input">
+                  <option value="">Produkt auswählen oder leer lassen</option>
+                  {products.map((product) => <option key={product.id} value={product.title}>{product.title}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-bold">
+                Dringlichkeit
+                <select value={form.urgency} onChange={(event) => onChange('urgency', event.target.value)} className="account-input">
+                  {urgencies.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <AccountInput label="Bestellnummer" value={form.orderNumber} onChange={(value) => onChange('orderNumber', value)} />
+              <AccountInput label="Seriennummer / Fahrzeugnummer" value={form.serialNumber} onChange={(value) => onChange('serialNumber', value)} />
+              <label className="grid gap-2 text-sm font-bold">
+                Wunschtermin
+                <input
+                  type="datetime-local"
+                  value={form.preferredDate}
+                  onChange={(event) => onChange('preferredDate', event.target.value)}
+                  className="account-input"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-bold">
+                Übergabe / Abholung
+                <select value={form.handover} onChange={(event) => onChange('handover', event.target.value)} className="account-input">
+                  {handoverOptions.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <AccountInput label="Telefon für Rückfragen" value={form.phone} onChange={(value) => onChange('phone', value)} />
+              <AccountInput label="Betreff" value={form.subject} onChange={(value) => onChange('subject', value)} required />
+            </div>
+            <label className="mt-3 grid gap-2 text-sm font-bold">
+              Fehlerbeschreibung / Wunsch
+              <textarea
+                value={form.message}
+                onChange={(event) => onChange('message', event.target.value)}
+                className="account-input min-h-40"
+                placeholder="Was ist passiert? Welche Warnlampe, welches Geräusch, welcher Fehlercode? Je genauer, desto schneller kann die Werkstatt vorbereiten."
+                required
+              />
+            </label>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-muted-foreground">
+                Nach dem Absenden erhalten Sie Updates direkt im Meinkonto. Admin-Antworten erscheinen im Ticketverlauf.
+              </p>
+              <Button variant="primary" disabled={loading}>
+                {loading ? 'Wird gesendet...' : 'Serviceanfrage senden'}
+              </Button>
+            </div>
+          </form>
         </div>
-        <form onSubmit={onService} className="space-y-3 rounded-3xl border border-border/60 bg-secondary/40 p-5">
-          <p className="font-black">Servicetermin anfragen</p>
-          <AccountInput label="Telefon" value={form.phone} onChange={(value) => onChange('phone', value)} />
-          <AccountInput label="Betreff" value={form.subject} onChange={(value) => onChange('subject', value)} required />
-          <textarea value={form.message} onChange={(event) => onChange('message', event.target.value)} className="account-input min-h-32" required />
-          <Button variant="primary" disabled={loading}>Termin senden</Button>
-        </form>
       </div>
     </Panel>
   )

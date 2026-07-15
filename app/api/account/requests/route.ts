@@ -21,6 +21,26 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
+function cleanText(value: unknown, maxLength = 180) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength)
+}
+
+function cleanPayload(type: CustomerRequestType, payload: unknown) {
+  const source = typeof payload === 'object' && payload ? payload as Record<string, unknown> : {}
+  if (type !== 'service') return source
+
+  return {
+    product: cleanText(source.product),
+    vehicleType: cleanText(source.vehicleType),
+    serviceCategory: cleanText(source.serviceCategory),
+    urgency: cleanText(source.urgency),
+    orderNumber: cleanText(source.orderNumber, 80),
+    serialNumber: cleanText(source.serialNumber, 120),
+    preferredDate: cleanText(source.preferredDate, 80),
+    handover: cleanText(source.handover, 120),
+  }
+}
+
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers }).catch(() => null)
   const email = session?.user?.email || request.nextUrl.searchParams.get('email') || ''
@@ -54,11 +74,13 @@ export async function POST(request: NextRequest) {
     phone: String(body.phone || '').slice(0, 80),
     subject: subject.slice(0, 180),
     message: String(body.message || '').slice(0, 3000),
-    payload: typeof body.payload === 'object' && body.payload ? body.payload : {},
+    payload: cleanPayload(type, body.payload),
   })
 
   return NextResponse.json({
     request: requestRecord,
-    message: 'Anfrage empfangen - unser Team prüft die Details und meldet sich persönlich bei Ihnen.',
+    message: type === 'service'
+      ? 'Serviceanfrage empfangen - unser Werkstattteam prüft die Details und meldet sich persönlich mit dem nächsten Schritt.'
+      : 'Anfrage empfangen - unser Team prüft die Details und meldet sich persönlich bei Ihnen.',
   }, { status: 201 })
 }

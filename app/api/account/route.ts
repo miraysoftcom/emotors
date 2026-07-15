@@ -8,6 +8,7 @@ import {
   saveCustomerAddress,
   updateCustomerAccount,
 } from '@/lib/customer-account-store'
+import { getCustomerRequests } from '@/lib/customer-request-store'
 
 async function getAccountContext(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers }).catch(() => null)
@@ -29,12 +30,14 @@ export async function GET(request: NextRequest) {
 
   const orders = getCustomerOrders(context.email, context.session?.user?.id)
   const invoices = getCustomerInvoices(context.email, context.session?.user?.id)
+  const requests = getCustomerRequests(context.email)
 
   return NextResponse.json({
     user: context.session?.user || null,
     account: context.account,
     orders,
     invoices,
+    requests,
     authenticated: Boolean(context.session?.user),
   }, {
     headers: {
