@@ -16,11 +16,18 @@ type AiProduct = {
   image: string
   price: number
   formattedPrice: string
+  formattedRegularPrice?: string
+  discountPercentage?: number
+  monthlyPrice: number
+  formattedMonthlyPrice: string
   description: string
   stockQuantity: number | null
+  reason: string
+  badges: string[]
 }
 
 type AiIntent = 'recommendation' | 'add_to_cart' | 'checkout' | 'support' | 'test_drive' | 'financing'
+type AdvisorAction = { label: string; href: string; tone: 'primary' | 'secondary' | 'outline' }
 
 const MAX_CONTEXT_PRODUCTS = 12
 
@@ -52,8 +59,39 @@ function productSearchText(product: StoredProduct) {
   ].filter(Boolean).join(' '))
 }
 
-function toAiProduct(product: StoredProduct): AiProduct {
+function inferReason(message: string, product: StoredProduct) {
+  const text = normalize(message)
   const pricing = resolveProductPrice(product)
+  if (pricing.hasDiscount) return 'Aktuelles Angebot mit reduziertem Preis und starkem Preis-Leistungs-Verhältnis.'
+  if (/(reichweite|lange|pendeln|arbeitsweg|commute)/.test(text) && product.range_km) {
+    return `Passt gut für längere Strecken mit bis zu ${product.range_km} km Reichweite.`
+  }
+  if (/(schnell|power|leistung|berg|steigung)/.test(text) && product.power_watts) {
+    return `Empfohlen wegen der Leistung von ${product.power_watts} W für dynamischere Fahrten.`
+  }
+  if (/(ohne fuhrerschein|ohne fuehrerschein|legal|strasse|zulassung)/.test(text)) {
+    return 'Interessant, wenn Alltagstauglichkeit und klare Schweizer Nutzung wichtig sind.'
+  }
+  if (/(rate|ratenzahlung|finanz|monatlich|leasing)/.test(text)) {
+    return 'Geeignet für Finanzierung, weil der Preis gut in ein Monatsbudget planbar ist.'
+  }
+  return 'Starke Empfehlung aus dem MK-eMotors Sortiment passend zu Ihrer Anfrage.'
+}
+
+function productBadges(product: StoredProduct) {
+  const pricing = resolveProductPrice(product)
+  return [
+    product.bestseller ? 'Bestseller' : '',
+    product.featured ? 'Empfohlen' : '',
+    pricing.hasDiscount ? `-${pricing.discountPercentage}%` : '',
+    product.range_km ? `${product.range_km} km` : '',
+    product.max_speed ? `${product.max_speed} km/h` : '',
+  ].filter(Boolean).slice(0, 4)
+}
+
+function toAiProduct(product: StoredProduct, message = ''): AiProduct {
+  const pricing = resolveProductPrice(product)
+  const monthlyPrice = Number(product.monthly_price || Math.max(1, Math.round(pricing.effectivePrice / 24)))
   return {
     id: String(product.id),
     title: product.title,
@@ -61,12 +99,26 @@ function toAiProduct(product: StoredProduct): AiProduct {
     image: product.image || product.images?.[0] || '/placeholder.svg',
     price: pricing.effectivePrice,
     formattedPrice: pricing.formattedEffectivePrice,
+    formattedRegularPrice: pricing.hasDiscount ? pricing.formattedRegularPrice : undefined,
+    discountPercentage: pricing.hasDiscount ? pricing.discountPercentage : undefined,
+    monthlyPrice,
+    formattedMonthlyPrice: formatMoney(monthlyPrice, 'CHF'),
     description: stripHtml(product.short_description || product.description || ''),
     stockQuantity: typeof product.stock_quantity === 'number' ? product.stock_quantity : null,
+    reason: inferReason(message, product),
+    badges: productBadges(product),
   }
 }
 
 function pickProducts(message: string, products: StoredProduct[]) {
+  const text = normalize(message)
+  const budgetMatch = text.match(/(?:chf|fr|budget|bis|unter|max)\s*['’]?\s*(\d{3,5})|(\d{3,5})\s*(?:chf|franken)/)
+  const budget = budgetMatch ? Number(budgetMatch[1] || budgetMatch[2]) : 0
+  const wantsRange = /(reichweite|lange|pendeln|arbeitsweg|commute|km)/.test(text)
+  const wantsPower = /(schnell|power|leistung|berg|steigung|motor)/.test(text)
+  const wantsOffer = /(angebot|rabatt|sale|aktion|gunstig|guenstig|billig|indirim)/.test(text)
+  const wantsAccessories = /(zubehor|zubehör|accessoire|ersatz|teile|helm|akku|ladegerat|ladegerät)/.test(text)
+
   const terms = normalize(message)
     .split(/[^a-z0-9]+/i)
     .filter((term) => term.length > 2)
@@ -80,6 +132,11 @@ function pickProducts(message: string, products: StoredProduct[]) {
         + (product.featured ? 2 : 0)
         + (product.bestseller ? 2 : 0)
         + (pricing.hasDiscount ? 3 : 0)
+        + (wantsOffer && pricing.hasDiscount ? 6 : 0)
+        + (wantsRange && product.range_km ? Math.min(6, Number(product.range_km) / 20) : 0)
+        + (wantsPower && product.power_watts ? Math.min(6, Number(product.power_watts) / 500) : 0)
+        + (wantsAccessories && /zubehor|zubehör|accessoire|ersatz|teile|helm|akku|ladegerat|ladegerät/i.test(text) ? 7 : 0)
+        + (budget > 0 && pricing.effectivePrice <= budget ? 5 : budget > 0 ? -3 : 0)
         + ((product.stock_quantity ?? 1) > 0 ? 1 : -4)
 
       return { product, score }
@@ -120,6 +177,50 @@ function detectIntent(message: string): AiIntent {
   return 'recommendation'
 }
 
+function buildAdvisorActions(intent: AiIntent): AdvisorAction[] {
+  if (intent === 'support') {
+    return [
+      { label: 'Support-Ticket öffnen', href: '/account?tab=support', tone: 'primary' },
+      { label: 'Service Center', href: '/account?tab=service', tone: 'secondary' },
+      { label: 'Kontaktformular', href: '/contact', tone: 'outline' },
+    ]
+  }
+  if (intent === 'test_drive') {
+    return [
+      { label: 'Probefahrt buchen', href: '/account?tab=testdrives', tone: 'primary' },
+      { label: 'Modell ansehen', href: '/produkte', tone: 'secondary' },
+      { label: 'Kontakt', href: '/contact', tone: 'outline' },
+    ]
+  }
+  if (intent === 'financing') {
+    return [
+      { label: 'Ratenzahlung prüfen', href: '/ratenzahlung', tone: 'primary' },
+      { label: 'Finanzierungsrechner', href: '/finanzierungsrechner', tone: 'secondary' },
+      { label: 'Beratung anfragen', href: '/contact', tone: 'outline' },
+    ]
+  }
+  return [
+    { label: 'Zur Kasse', href: '/kasse', tone: 'primary' },
+    { label: 'Warenkorb öffnen', href: '/cart', tone: 'secondary' },
+    { label: 'Probefahrt', href: '/account?tab=testdrives', tone: 'outline' },
+  ]
+}
+
+function buildAdvisorSummary(intent: AiIntent, selected: AiProduct[]) {
+  const first = selected[0]
+  if (intent === 'checkout' || intent === 'add_to_cart') {
+    return first
+      ? `Ich habe ${first.title} als stärkste Kaufempfehlung vorbereitet. Sie können es direkt in den Warenkorb legen oder sicher zur Kasse gehen.`
+      : 'Ich kann den passenden Artikel für den Warenkorb vorbereiten und Sie sicher zur Kasse führen.'
+  }
+  if (intent === 'support') return 'Ich leite Sie schnell zum passenden Support- oder Serviceweg und kann ein Ticket im Kundenkonto vorbereiten.'
+  if (intent === 'test_drive') return 'Für eine Probefahrt empfehle ich zuerst ein Modell auszuwählen, damit der Termin gezielt vorbereitet werden kann.'
+  if (intent === 'financing') return 'Ich priorisiere Modelle, die gut zu einem planbaren Monatsbudget und Ratenzahlung passen.'
+  return first
+    ? `Meine Top-Empfehlung ist ${first.title}, weil sie am besten zu Ihrer Anfrage passt.`
+    : 'Ich suche passende Modelle, Zubehör und Serviceoptionen aus dem MK-eMotors Sortiment.'
+}
+
 function buildLocalAnswer(message: string, products: StoredProduct[], selected: AiProduct[]) {
   const text = normalize(message)
   const intent = detectIntent(message)
@@ -138,12 +239,12 @@ function buildLocalAnswer(message: string, products: StoredProduct[], selected: 
       : 'Ich habe passende Produkte aus dem MK-eMotors Sortiment für Sie ausgewählt.'
 
   const productLine = selected.length
-    ? selected.map((product) => `${product.title} (${product.formattedPrice})`).join(', ')
+    ? selected.slice(0, 3).map((product) => `${product.title} (${product.formattedPrice}${product.formattedRegularPrice ? ` statt ${product.formattedRegularPrice}` : ''})`).join(', ')
     : products.length
       ? `${products[0].title} (${formatMoney(resolveProductPrice(products[0]).effectivePrice, 'CHF')})`
       : 'Aktuell sind keine Produkte im Katalog verfügbar.'
 
-  return `${intro} Meine Empfehlung: ${productLine}. Sie können die Produkte direkt ansehen, in den Warenkorb legen, zur Kasse gehen oder Support kontaktieren.`
+  return `${intro}\n\nMeine Empfehlung: ${productLine}.\n\nWarum: ${selected[0]?.reason || 'Die Auswahl passt am besten zu Ihrer Anfrage.'}\n\nNächster Schritt: Produkt ansehen, in den Warenkorb legen, Probefahrt buchen oder sicher zur Kasse gehen.`
 }
 
 export async function POST(request: NextRequest) {
@@ -163,7 +264,7 @@ export async function POST(request: NextRequest) {
 
     const products = getStoredProducts().filter((product) => product.active !== false && product.archived !== true)
     const selectedProducts = pickProducts(message, products)
-    const recommendations = selectedProducts.map(toAiProduct)
+    const recommendations = selectedProducts.map((product) => toAiProduct(product, message))
     const intent = detectIntent(message)
 
     if (settings.ai.apiKey && settings.ai.endpoint && settings.ai.model) {
@@ -192,7 +293,14 @@ export async function POST(request: NextRequest) {
           const data = await response.json()
           const answer = String(data?.choices?.[0]?.message?.content || '').trim()
           if (answer) {
-            return NextResponse.json({ answer, products: recommendations, intent, mode: 'ai' })
+            return NextResponse.json({
+              answer,
+              products: recommendations,
+              intent,
+              mode: 'ai',
+              summary: buildAdvisorSummary(intent, recommendations),
+              actions: buildAdvisorActions(intent),
+            })
           }
         }
       } catch (error) {
@@ -205,6 +313,8 @@ export async function POST(request: NextRequest) {
       products: recommendations,
       intent,
       mode: 'local',
+      summary: buildAdvisorSummary(intent, recommendations),
+      actions: buildAdvisorActions(intent),
     })
   } catch (error) {
     console.error('[Shop AI Error]', error)

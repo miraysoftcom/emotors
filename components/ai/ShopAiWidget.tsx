@@ -37,11 +37,18 @@ type AiProduct = {
   image: string
   price: number
   formattedPrice: string
+  formattedRegularPrice?: string
+  discountPercentage?: number
+  monthlyPrice: number
+  formattedMonthlyPrice: string
   description: string
   stockQuantity: number | null
+  reason: string
+  badges: string[]
 }
 
 type AiIntent = 'recommendation' | 'add_to_cart' | 'checkout' | 'support' | 'test_drive' | 'financing'
+type AdvisorAction = { label: string; href: string; tone: 'primary' | 'secondary' | 'outline' }
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -53,6 +60,8 @@ export function ShopAiWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [products, setProducts] = useState<AiProduct[]>([])
   const [intent, setIntent] = useState<AiIntent>('recommendation')
+  const [summary, setSummary] = useState('')
+  const [actions, setActions] = useState<AdvisorAction[]>([])
   const [actionNotice, setActionNotice] = useState('')
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -114,6 +123,8 @@ export function ShopAiWidget() {
       setMessages((current) => [...current, { role: 'assistant', content: String(data.answer || '') }])
       setProducts(nextProducts)
       setIntent(nextIntent)
+      setSummary(String(data.summary || ''))
+      setActions(Array.isArray(data.actions) ? data.actions as AdvisorAction[] : [])
       setActionNotice('')
 
       if ((nextIntent === 'add_to_cart' || nextIntent === 'checkout') && nextProducts[0]) {
@@ -157,7 +168,7 @@ export function ShopAiWidget() {
 
   const buyProduct = (product: AiProduct) => {
     addProduct(product, { silent: true })
-    window.location.href = '/checkout'
+    window.location.href = '/kasse'
   }
 
   if (!settings) return null
@@ -222,10 +233,43 @@ export function ShopAiWidget() {
                   <Link href="/cart" className="rounded-full bg-white px-4 py-3 text-center text-sm font-black text-neutral-950 hover:bg-emerald-300">
                     Warenkorb öffnen
                   </Link>
-                  <Link href="/checkout" className="rounded-full bg-emerald-400 px-4 py-3 text-center text-sm font-black text-neutral-950 hover:bg-emerald-300">
+                  <Link href="/kasse" className="rounded-full bg-emerald-400 px-4 py-3 text-center text-sm font-black text-neutral-950 hover:bg-emerald-300">
                     Zur Kasse
                   </Link>
                 </div>
+              </div>
+            )}
+
+            {(summary || actions.length > 0) && (
+              <div className="rounded-[1.75rem] border border-emerald-300/25 bg-gradient-to-br from-emerald-300/15 via-white/[0.05] to-white/[0.02] p-4 shadow-xl shadow-black/20">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-emerald-300 text-neutral-950">
+                    <Sparkles className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">MK Kaufberatung</p>
+                    {summary && <p className="mt-2 text-sm font-bold leading-6 text-white">{summary}</p>}
+                  </div>
+                </div>
+                {actions.length > 0 && (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                    {actions.map((action) => (
+                      <Link
+                        key={`${action.href}-${action.label}`}
+                        href={action.href}
+                        className={`rounded-full px-4 py-3 text-center text-xs font-black transition ${
+                          action.tone === 'primary'
+                            ? 'bg-emerald-400 text-neutral-950 hover:bg-emerald-300'
+                            : action.tone === 'secondary'
+                              ? 'bg-white text-neutral-950 hover:bg-emerald-100'
+                              : 'border border-white/20 text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {action.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -253,12 +297,39 @@ export function ShopAiWidget() {
                 {products.slice(0, 3).map((product) => (
                   <article key={product.id} className="overflow-hidden rounded-[1.65rem] border border-white/15 bg-gradient-to-br from-white/[0.08] to-white/[0.02] shadow-xl shadow-black/20">
                     <Link href={`/produkte/${product.slug}`} className="block">
-                      <div className="flex aspect-[4/3] items-center justify-center bg-white">
+                      <div className="relative flex aspect-[4/3] items-center justify-center bg-white">
+                        {product.discountPercentage ? (
+                          <span className="absolute right-3 top-3 rounded-full bg-red-600 px-3 py-1 text-xs font-black text-white">
+                            -{product.discountPercentage}%
+                          </span>
+                        ) : null}
                         <img src={product.image} alt={product.title} className="h-full w-full object-contain p-4" />
                       </div>
                       <div className="p-4">
+                        {product.badges?.length > 0 && (
+                          <div className="mb-3 flex flex-wrap gap-2">
+                            {product.badges.map((badge) => (
+                              <span key={badge} className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest text-emerald-200">
+                                {badge}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <h3 className="line-clamp-2 text-base font-black">{product.title}</h3>
-                        <p className="mt-1 text-sm font-bold text-emerald-300">{product.formattedPrice}</p>
+                        <div className="mt-2 flex flex-wrap items-end gap-2">
+                          {product.formattedRegularPrice && (
+                            <span className="text-xs font-black text-white/45 line-through decoration-red-400 decoration-2">
+                              {product.formattedRegularPrice}
+                            </span>
+                          )}
+                          <p className="text-lg font-black text-emerald-300">{product.formattedPrice}</p>
+                        </div>
+                        <p className="mt-1 text-xs font-bold text-white/65">oder ab {product.formattedMonthlyPrice} / Monat</p>
+                        {product.reason && (
+                          <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm font-semibold leading-5 text-white/80">
+                            {product.reason}
+                          </p>
+                        )}
                         {product.description && <p className="mt-2 line-clamp-2 text-sm text-white/70">{product.description}</p>}
                       </div>
                     </Link>
@@ -279,7 +350,7 @@ export function ShopAiWidget() {
                         onClick={() => buyProduct(product)}
                         className="flex items-center justify-center gap-2 rounded-full bg-emerald-400 px-4 py-3 text-sm font-black text-neutral-950 transition hover:bg-emerald-300"
                       >
-                        Kaufen
+                        Jetzt kaufen
                       </button>
                     </div>
                   </article>
