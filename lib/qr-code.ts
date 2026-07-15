@@ -57,7 +57,10 @@ export function createSwissQrSvg(text: string, className = 'qr-code') {
     rects.push(`<rect x="${col + quietZone}" y="${row + quietZone}" width="1" height="1" />`)
   })
 
-  const crossSize = Math.max(5.6, matrix.size * 0.14)
+  const crossSize = Math.max(5.2, matrix.size * 0.12)
+  const guardSize = crossSize * 1.28
+  const guardX = viewSize / 2 - guardSize / 2
+  const guardY = viewSize / 2 - guardSize / 2
   const crossX = viewSize / 2 - crossSize / 2
   const crossY = viewSize / 2 - crossSize / 2
   const plusThickness = crossSize * 0.18
@@ -71,6 +74,7 @@ export function createSwissQrSvg(text: string, className = 'qr-code') {
     <svg class="${className}" viewBox="0 0 ${viewSize} ${viewSize}" role="img" aria-label="Swiss QR Code" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
       <rect width="${viewSize}" height="${viewSize}" fill="#fff" />
       <g fill="#000">${rects.join('')}</g>
+      <rect x="${guardX.toFixed(3)}" y="${guardY.toFixed(3)}" width="${guardSize.toFixed(3)}" height="${guardSize.toFixed(3)}" fill="#fff" />
       <rect x="${crossX.toFixed(3)}" y="${crossY.toFixed(3)}" width="${crossSize.toFixed(3)}" height="${crossSize.toFixed(3)}" fill="#111" />
       <rect x="${plusX.toFixed(3)}" y="${plusY.toFixed(3)}" width="${plusThickness.toFixed(3)}" height="${plusLong.toFixed(3)}" fill="#fff" />
       <rect x="${plusHorizontalX.toFixed(3)}" y="${plusHorizontalY.toFixed(3)}" width="${plusLong.toFixed(3)}" height="${plusThickness.toFixed(3)}" fill="#fff" />

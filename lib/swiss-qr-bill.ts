@@ -192,7 +192,7 @@ function drawSwissQrPaymentPart({
 
   text(67, 281, 'Waehrung', 7, 'F2')
   text(90, 281, 'Betrag', 7, 'F2')
-  text(67, 288, 'CHF', 10)
+  text(67, 288, invoice.currency || 'CHF', 10)
   text(90, 288, amountOnly(invoice.amount), 10)
   line(0, QR_BILL_TOP_MM, 210, QR_BILL_TOP_MM, 0.25)
 }
@@ -201,14 +201,17 @@ function drawReceiptText(text: (xMm: number, topMm: number, value: string | numb
   text(5, 213, 'Konto / Zahlbar an', 6, 'F2')
   ;[normalized.account, normalized.creditor.name, normalized.creditor.streetLine, `${normalized.creditor.postalCode} ${normalized.creditor.city}`]
     .forEach((value, index) => text(5, 217 + index * 4, value, 6))
-  text(5, 238, 'Referenz', 6, 'F2')
-  text(5, 242, formatReference(normalized.reference), 6)
-  text(5, 253, 'Zahlbar durch', 6, 'F2')
+  const debtorTop = normalized.reference ? 253 : 238
+  if (normalized.reference) {
+    text(5, 238, 'Referenz', 6, 'F2')
+    text(5, 242, formatReference(normalized.reference), 6)
+  }
+  text(5, debtorTop, 'Zahlbar durch', 6, 'F2')
   ;[normalized.debtor.name, normalized.debtor.streetLine, `${normalized.debtor.postalCode} ${normalized.debtor.city}`]
-    .forEach((value, index) => text(5, 257 + index * 4, value, 6))
+    .forEach((value, index) => text(5, debtorTop + 4 + index * 4, value, 6))
   text(5, 282, 'Waehrung', 6, 'F2')
   text(28, 282, 'Betrag', 6, 'F2')
-  text(5, 288, 'CHF', 7)
+  text(5, 288, invoice.currency || 'CHF', 7)
   text(28, 288, amountOnly(invoice.amount), 7)
   text(43, 294, 'Annahmestelle', 5, 'F2')
 }
@@ -217,11 +220,14 @@ function drawPaymentText(text: (xMm: number, topMm: number, value: string | numb
   text(119, 207, 'Konto / Zahlbar an', 7, 'F2')
   ;[normalized.account, normalized.creditor.name, normalized.creditor.streetLine, `${normalized.creditor.postalCode} ${normalized.creditor.city}`]
     .forEach((value, index) => text(119, 213 + index * 5, value, 8))
-  text(119, 238, 'Referenz', 7, 'F2')
-  text(119, 243, formatReference(normalized.reference), 8)
-  text(119, 257, 'Zahlbar durch', 7, 'F2')
+  const debtorTop = normalized.reference ? 257 : 238
+  if (normalized.reference) {
+    text(119, 238, 'Referenz', 7, 'F2')
+    text(119, 243, formatReference(normalized.reference), 8)
+  }
+  text(119, debtorTop, 'Zahlbar durch', 7, 'F2')
   ;[normalized.debtor.name, normalized.debtor.streetLine, `${normalized.debtor.postalCode} ${normalized.debtor.city}`]
-    .forEach((value, index) => text(119, 263 + index * 5, value, 8))
+    .forEach((value, index) => text(119, debtorTop + 6 + index * 5, value, 8))
 }
 
 function normalizeInvoiceInput(invoice: InvoiceRecord, order: StoredOrder | undefined, settings: InvoiceSettings) {
@@ -233,21 +239,21 @@ function normalizeInvoiceInput(invoice: InvoiceRecord, order: StoredOrder | unde
     country: settings.country || 'CH',
   })
   const debtor = normalizeParty({
-    name: order ? `${order.firstName} ${order.lastName}`.trim() : 'Kunde',
-    street: order?.billingStreet || 'Musterstrasse 1',
-    postalCode: order?.billingPostalCode || '1234',
-    city: order?.billingCity || 'Musterstadt',
-    country: order?.billingCountry || 'CH',
+    name: order ? `${order.firstName} ${order.lastName}`.trim() : invoice.customerName || [invoice.billingAddress?.firstName, invoice.billingAddress?.lastName].filter(Boolean).join(' ') || 'Kunde',
+    street: order?.billingStreet || invoice.billingAddress?.street || 'Musterstrasse 1',
+    postalCode: order?.billingPostalCode || invoice.billingAddress?.postalCode || '1234',
+    city: order?.billingCity || invoice.billingAddress?.city || 'Musterstadt',
+    country: order?.billingCountry || invoice.billingAddress?.country || 'CH',
   })
-  const reference = invoice.qrReference || buildSwissQrPaymentReference(invoice.orderId, settings.referenceType)
+  const reference = normalizeReferenceForType(invoice.qrReference, invoice.orderId, settings.referenceType)
   const account = selectPaymentAccount(settings)
 
   validateSwissQrInput({ account, referenceType: settings.referenceType, reference, creditor, debtor, amount: invoice.amount })
 
-  const payload = invoice.swissQrPayload || buildSwissQrBillPayload(settings, {
+  const payload = buildSwissQrBillPayload(settings, {
     orderNumber: invoice.orderNumber,
     totalAmount: invoice.amount,
-    currency: 'CHF',
+    currency: invoice.currency || settings.currency || 'CHF',
     customerName: debtor.name,
     customerStreet: debtor.streetLine,
     customerPostalCode: debtor.postalCode,
@@ -258,11 +264,20 @@ function normalizeInvoiceInput(invoice: InvoiceRecord, order: StoredOrder | unde
   return { creditor, debtor, reference, account, payload }
 }
 
+export function normalizeReferenceForType(reference: string | null | undefined, seed: number, type: ReferenceType) {
+  const value = String(reference || '').replace(/\s+/g, '').toUpperCase()
+  if (type === 'NON') return null
+  if (type === 'QRR' && isValidQrReference(value)) return value
+  if (type === 'SCOR' && isValidCreditorReference(value)) return value
+  return buildSwissQrPaymentReference(seed, type)
+}
+
 export function buildSwissQrBillPayload(settings: InvoiceSettings, order: SwissQrOrderPayload, reference: string | null) {
   const account = selectPaymentAccount(settings)
   const creditor = normalizeParty({
     name: settings.accountHolder || settings.companyName,
-    street: `${settings.street} ${settings.houseNumber}`.trim(),
+    street: settings.street,
+    houseNumber: settings.houseNumber,
     postalCode: settings.postalCode,
     city: settings.city,
     country: settings.country || 'CH',
@@ -276,6 +291,7 @@ export function buildSwissQrBillPayload(settings: InvoiceSettings, order: SwissQ
   }, false)
   const referenceType = settings.referenceType || 'NON'
   const amount = roundChf(order.totalAmount).toFixed(2)
+  const currency = order.currency || settings.currency || 'CHF'
 
   validateSwissQrInput({ account, referenceType, reference, creditor, debtor, amount: order.totalAmount })
 
@@ -284,10 +300,10 @@ export function buildSwissQrBillPayload(settings: InvoiceSettings, order: SwissQ
     '0200',
     '1',
     account,
-    'K',
+    'S',
     creditor.name,
-    creditor.streetLine,
-    '',
+    creditor.street,
+    creditor.houseNumber,
     creditor.postalCode,
     creditor.city,
     creditor.country,
@@ -299,18 +315,21 @@ export function buildSwissQrBillPayload(settings: InvoiceSettings, order: SwissQ
     '',
     '',
     amount,
-    'CHF',
-    debtor.name ? 'K' : '',
+    currency,
+    debtor.name ? 'S' : '',
     debtor.name,
-    debtor.streetLine,
-    '',
+    debtor.name ? debtor.street : '',
+    debtor.name ? debtor.houseNumber : '',
     debtor.postalCode,
     debtor.city,
-    debtor.country,
+    debtor.name ? debtor.country : '',
     referenceType,
     reference || '',
     `Bestellung ${order.orderNumber}`,
     'EPD',
+    '',
+    '',
+    '',
   ].join('\n')
 }
 
@@ -349,16 +368,45 @@ function validateSwissQrInput(input: {
 
 function normalizeParty(party: SwissQrParty | { name?: string; street?: string; postalCode?: string; city?: string; country?: string }, required = true) {
   const name = sanitizeQrText(party.name || '')
-  const streetLine = sanitizeQrText(party.street || '')
+  const split = splitStreetAndHouse(party.street || '', 'houseNumber' in party ? party.houseNumber : undefined)
+  const street = sanitizeQrText(split.street)
+  const houseNumber = sanitizeQrText(split.houseNumber)
+  const streetLine = [street, houseNumber].filter(Boolean).join(' ')
   const postalCode = sanitizeQrText(party.postalCode || '')
   const city = sanitizeQrText(party.city || '')
   const country = sanitizeQrText((party.country || 'CH').toUpperCase()).slice(0, 2)
   if (required && (!name || !streetLine || !postalCode || !city || !country)) throw new Error('Swiss QR-Bill Adressdaten sind unvollstaendig.')
-  return { name, streetLine, postalCode, city, country }
+  return { name, street, houseNumber, streetLine, postalCode, city, country }
+}
+
+function splitStreetAndHouse(streetValue: string, explicitHouseNumber?: string) {
+  const street = String(streetValue || '').trim()
+  const houseNumber = String(explicitHouseNumber || '').trim()
+  if (houseNumber) return { street, houseNumber }
+
+  const match = street.match(/^(.+?)\s+([0-9]+[0-9A-Za-z./-]*)$/)
+  if (!match) return { street, houseNumber: '' }
+  return { street: match[1], houseNumber: match[2] }
 }
 
 function normalizeIban(value?: string | null) {
   return String(value || '').replace(/\s+/g, '').toUpperCase()
+}
+
+export function isValidSwissQrIban(value: string) {
+  return isValidIban(value)
+}
+
+export function isValidSwissQrIbanForQrr(value: string) {
+  return isValidQrIban(value)
+}
+
+export function isValidSwissQrReference(value: string) {
+  return isValidQrReference(value)
+}
+
+export function isValidSwissCreditorReference(value: string) {
+  return isValidCreditorReference(value)
 }
 
 function isValidIban(value: string) {
@@ -423,10 +471,14 @@ function drawSwissQrCode(content: string[], payload: string, xMm: number, topMm:
     content.push(`${drawX.toFixed(2)} ${drawY.toFixed(2)} ${cell.toFixed(2)} ${cell.toFixed(2)} re f`)
   })
 
-  const crossSize = sizeMm * MM * 0.17
+  const crossSize = sizeMm * MM * 0.12
+  const guardSize = crossSize * 1.28
   const crossX = x + (sizeMm * MM) / 2 - crossSize / 2
   const crossY = y + (sizeMm * MM) / 2 - crossSize / 2
-  content.push(`1 g ${crossX.toFixed(2)} ${crossY.toFixed(2)} ${crossSize.toFixed(2)} ${crossSize.toFixed(2)} re f 0 g`)
+  const guardX = x + (sizeMm * MM) / 2 - guardSize / 2
+  const guardY = y + (sizeMm * MM) / 2 - guardSize / 2
+  content.push(`1 g ${guardX.toFixed(2)} ${guardY.toFixed(2)} ${guardSize.toFixed(2)} ${guardSize.toFixed(2)} re f`)
+  content.push(`0 g ${crossX.toFixed(2)} ${crossY.toFixed(2)} ${crossSize.toFixed(2)} ${crossSize.toFixed(2)} re f`)
   content.push(`${(crossX + crossSize * 0.42).toFixed(2)} ${(crossY + crossSize * 0.18).toFixed(2)} ${(crossSize * 0.16).toFixed(2)} ${(crossSize * 0.64).toFixed(2)} re f`)
   content.push(`${(crossX + crossSize * 0.18).toFixed(2)} ${(crossY + crossSize * 0.42).toFixed(2)} ${(crossSize * 0.64).toFixed(2)} ${(crossSize * 0.16).toFixed(2)} re f`)
 }

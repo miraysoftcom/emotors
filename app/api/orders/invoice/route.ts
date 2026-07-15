@@ -49,7 +49,13 @@ export async function GET(request: NextRequest) {
   }
 
   if (request.nextUrl.searchParams.get('format') === 'html') {
-    return new NextResponse(renderInvoiceHtml(invoice), {
+    let html: string
+    try {
+      html = renderInvoiceHtml(invoice)
+    } catch (error) {
+      html = renderInvoiceHtmlError(error instanceof Error ? error.message : 'Unbekannter QR-Bill Fehler.')
+    }
+    return new NextResponse(html, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-store',
@@ -80,4 +86,18 @@ export async function GET(request: NextRequest) {
       },
     })
   }
+}
+
+function renderInvoiceHtmlError(message: string) {
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Rechnung nicht verfügbar</title></head><body style="font-family:Arial,sans-serif;padding:32px;line-height:1.5"><h1>Rechnung konnte nicht erstellt werden</h1><p>${escapeHtml(message)}</p><p>Bitte kontaktieren Sie MK-eMotors Dornach oder prüfen Sie die Swiss QR-Bill Einstellungen.</p></body></html>`
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }[char] || char))
 }

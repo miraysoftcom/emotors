@@ -5,13 +5,33 @@ import { getStoredOrders } from '@/lib/orders-store'
 import type { TaxCalculationResult } from '@/lib/tax-calculation'
 import { renderInvoiceHtmlDocument } from '@/lib/invoice-document'
 import { createQrMatrix } from '@/lib/qr-code'
-import { buildSwissQrBillPayload, buildSwissQrPaymentReference, renderSwissQrInvoicePdfBuffer } from '@/lib/swiss-qr-bill'
+import {
+  buildSwissQrBillPayload,
+  buildSwissQrPaymentReference,
+  isValidSwissCreditorReference,
+  isValidSwissQrIban,
+  isValidSwissQrIbanForQrr,
+  isValidSwissQrReference,
+  normalizeReferenceForType,
+  renderSwissQrInvoicePdfBuffer,
+} from '@/lib/swiss-qr-bill'
 
 const INVOICE_FILE = path.join(process.cwd(), '.data', 'invoices.json')
 const SETTINGS_FILE = path.join(process.cwd(), '.data', 'invoice-settings.json')
 
 export type ReferenceType = 'QRR' | 'SCOR' | 'NON'
 export type SwissQrConfigStatus = 'vollstaendig' | 'unvollstaendig' | 'nicht_konfiguriert' | 'fehlerhaft' | 'deaktiviert'
+export type InvoiceStatus =
+  | 'Entwurf'
+  | 'Offen'
+  | 'Zahlung ausstehend'
+  | 'Teilweise bezahlt'
+  | 'Bezahlt'
+  | 'Überfällig'
+  | 'Storniert'
+  | 'Gutgeschrieben'
+  | 'Mahnung gesendet'
+  | 'settings_required'
 
 export interface InvoiceSettings {
   enabled: boolean
@@ -63,17 +83,91 @@ export interface InvoiceRecord {
   orderId: number
   orderNumber: string
   invoiceNumber: string
-  status: 'Offen' | 'Zahlung ausstehend' | 'Bezahlt' | 'Überfällig' | 'Storniert' | 'settings_required'
+  status: InvoiceStatus
   paymentMethod: string
   amount: number
   currency: 'CHF' | 'EUR'
   dueDate: string
+  invoiceDate?: string
+  serviceDate?: string
+  customerEmail?: string
+  customerPhone?: string
+  customerName?: string
+  customerCompany?: string
+  customerUid?: string
+  billingAddress?: InvoiceAddress | null
+  shippingAddress?: InvoiceAddress | null
+  items?: InvoiceLineItem[]
+  notes?: string
+  internalNotes?: string
+  paidAmount?: number
+  openAmount?: number
+  payments?: InvoicePaymentRecord[]
+  finalizedAt?: string | null
+  cancelledAt?: string | null
+  source?: 'order' | 'manual' | 'credit_note' | 'storno'
   taxSnapshot?: TaxCalculationResult | null
   swissQrSnapshot?: InvoiceSettings | null
   qrReference?: string | null
   swissQrPayload?: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface InvoiceAddress {
+  company?: string
+  firstName?: string
+  lastName?: string
+  street: string
+  postalCode: string
+  city: string
+  country: string
+}
+
+export interface InvoiceLineItem {
+  id: string
+  name: string
+  description?: string
+  sku?: string
+  quantity: number
+  unit: string
+  unitPrice: number
+  discountPercent: number
+  taxRate: number
+  lineTotal: number
+}
+
+export interface InvoicePaymentRecord {
+  id: string
+  amount: number
+  currency: 'CHF' | 'EUR'
+  method: string
+  paidAt: string
+  transactionId?: string
+  bankReference?: string
+  note?: string
+  createdBy?: string
+  createdAt: string
+}
+
+export interface ManualInvoiceInput {
+  status?: InvoiceStatus
+  customerEmail?: string
+  customerPhone?: string
+  customerName?: string
+  customerCompany?: string
+  customerUid?: string
+  billingAddress?: Partial<InvoiceAddress> | null
+  shippingAddress?: Partial<InvoiceAddress> | null
+  paymentMethod?: string
+  currency?: 'CHF' | 'EUR'
+  dueDate?: string
+  invoiceDate?: string
+  serviceDate?: string
+  orderNumber?: string
+  notes?: string
+  internalNotes?: string
+  items?: Array<Partial<InvoiceLineItem>>
 }
 
 const defaultSettings: InvoiceSettings = {
@@ -228,18 +322,19 @@ export function getSwissQrStatus(settings = getInvoiceSettings()) {
   if (!['CHF', 'EUR'].includes(settings.currency)) errors.push('Die Währung muss CHF oder EUR sein.')
   if (settings.country && !/^[A-Z]{2}$/.test(settings.country)) errors.push('Bitte geben Sie das Land als ISO-Code ein, z. B. CH.')
   if (settings.postalCode && !/^[0-9]{4,5}$/.test(settings.postalCode)) errors.push('Die Postleitzahl ist ungültig.')
-  if (iban && !isValidIbanFormat(iban)) errors.push('Die IBAN ist ungültig.')
-  if (qrIban && !isValidIbanFormat(qrIban)) errors.push('Die QR-IBAN ist ungültig.')
+  if (iban && !isValidSwissQrIban(iban)) errors.push('Die IBAN ist ungültig.')
+  if (qrIban && !isValidSwissQrIban(qrIban)) errors.push('Die QR-IBAN ist ungültig.')
   if (qrIban && !/^(CH|LI)/.test(qrIban)) errors.push('Die QR-IBAN muss mit CH oder LI beginnen.')
 
   if (settings.referenceType === 'QRR') {
     if (!qrIban) missing.push('QR-IBAN')
+    if (qrIban && !isValidSwissQrIbanForQrr(qrIban)) errors.push('QRR-Zahlungen benötigen eine QR-IBAN mit IID 30000-31999.')
     const reference = settings.standardReference || buildReference(1, 'QRR')
-    if (!isValidQrReference(reference || '')) errors.push('Die Referenznummer ist ungültig.')
+    if (!isValidSwissQrReference(reference || '')) errors.push('Die Referenznummer ist ungültig.')
   }
   if (settings.referenceType === 'SCOR') {
     if (!iban) missing.push('Normale IBAN')
-    if (settings.creditorReference && !/^RF[0-9]{2}[A-Z0-9]{1,21}$/.test(settings.creditorReference.replace(/\s+/g, '').toUpperCase())) {
+    if (settings.creditorReference && !isValidSwissCreditorReference(settings.creditorReference)) {
       errors.push('Die Creditor Reference ist ungültig.')
     }
   }
@@ -261,19 +356,124 @@ export function isValidIbanFormat(value: string) {
 
 export function getInvoices() {
   return readJson<InvoiceRecord[]>(INVOICE_FILE, [])
+    .map(normalizeInvoiceRecord)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+function writeInvoices(invoices: InvoiceRecord[]) {
+  writeJson(INVOICE_FILE, invoices.map(normalizeInvoiceRecord))
+}
+
+function normalizeInvoiceRecord(invoice: InvoiceRecord): InvoiceRecord {
+  const paidAmount = normalizeMoneyAmount((invoice.payments || []).reduce((sum, payment) => sum + normalizeMoneyAmount(payment.amount), 0))
+  const openAmount = normalizeMoneyAmount(Math.max(0, normalizeMoneyAmount(invoice.amount) - paidAmount))
+  return {
+    ...invoice,
+    orderId: invoice.orderId ?? 0,
+    orderNumber: invoice.orderNumber || '',
+    status: normalizeInvoiceStatus(invoice, paidAmount, openAmount),
+    amount: normalizeMoneyAmount(invoice.amount),
+    paidAmount,
+    openAmount,
+    payments: invoice.payments || [],
+    items: invoice.items || [],
+    source: invoice.source || (invoice.orderId ? 'order' : 'manual'),
+  }
+}
+
+function normalizeInvoiceStatus(invoice: InvoiceRecord, paidAmount?: number, openAmount?: number): InvoiceStatus {
+  if (invoice.status === 'settings_required') {
+    const currentStatus = getSwissQrStatus(getInvoiceSettings())
+    if (currentStatus.status !== 'vollstaendig') return 'settings_required'
+  }
+  if (invoice.status === 'Storniert' || invoice.status === 'Gutgeschrieben' || invoice.status === 'Entwurf') {
+    return invoice.status
+  }
+  const paid = paidAmount ?? normalizeMoneyAmount((invoice.payments || []).reduce((sum, payment) => sum + normalizeMoneyAmount(payment.amount), 0))
+  const open = openAmount ?? normalizeMoneyAmount(Math.max(0, normalizeMoneyAmount(invoice.amount) - paid))
+  if (paid >= normalizeMoneyAmount(invoice.amount) && invoice.amount > 0) return 'Bezahlt'
+  if (paid > 0 && open > 0) return 'Teilweise bezahlt'
+  if (invoice.dueDate && new Date(invoice.dueDate).getTime() < startOfToday().getTime()) return 'Überfällig'
+  return invoice.status === 'Zahlung ausstehend' ? 'Zahlung ausstehend' : 'Offen'
+}
+
+function startOfToday() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
 }
 
 export function updateInvoice(id: number, data: Partial<InvoiceRecord>) {
   const invoices = getInvoices()
   const existing = invoices.find((invoice) => invoice.id === id)
   if (!existing) return null
-  const updated = {
-    ...existing,
-    ...data,
-    updatedAt: new Date().toISOString(),
+  const protectedFinalized = Boolean(existing.finalizedAt && existing.status !== 'Entwurf')
+  const financialKeys: Array<keyof InvoiceRecord> = ['amount', 'currency', 'items', 'taxSnapshot']
+  const filtered = { ...data }
+  if (protectedFinalized) {
+    for (const key of financialKeys) delete filtered[key]
   }
-  writeJson(INVOICE_FILE, invoices.map((invoice) => invoice.id === id ? updated : invoice))
+  const updated = normalizeInvoiceRecord({
+    ...existing,
+    ...filtered,
+    updatedAt: new Date().toISOString(),
+  })
+  writeInvoices(invoices.map((invoice) => invoice.id === id ? updated : invoice))
+  return updated
+}
+
+export function deleteInvoice(id: number) {
+  const invoices = getInvoices()
+  const existing = invoices.find((invoice) => invoice.id === id)
+  if (!existing) return null
+  if (existing.finalizedAt && existing.status !== 'Entwurf' && existing.status !== 'Storniert') {
+    return updateInvoice(id, { status: 'Storniert', cancelledAt: new Date().toISOString() })
+  }
+  writeInvoices(invoices.filter((invoice) => invoice.id !== id))
+  return existing
+}
+
+export function finalizeInvoice(id: number) {
+  const invoice = getInvoices().find((item) => item.id === id)
+  if (!invoice) return null
+  return updateInvoice(id, {
+    status: invoice.paymentMethod === 'vorauszahlung' ? 'Zahlung ausstehend' : 'Offen',
+    finalizedAt: invoice.finalizedAt || new Date().toISOString(),
+  })
+}
+
+export function cancelInvoice(id: number) {
+  return updateInvoice(id, { status: 'Storniert', cancelledAt: new Date().toISOString() })
+}
+
+export function addInvoicePayment(id: number, data: Partial<InvoicePaymentRecord>) {
+  const invoices = getInvoices()
+  const existing = invoices.find((invoice) => invoice.id === id)
+  if (!existing) return null
+  if (existing.status === 'Storniert' || existing.status === 'Gutgeschrieben') {
+    throw new Error('Für stornierte oder gutgeschriebene Rechnungen kann keine Zahlung erfasst werden.')
+  }
+  const amount = normalizeMoneyAmount(data.amount || 0)
+  if (amount <= 0) throw new Error('Der Zahlungsbetrag muss größer als 0 sein.')
+  const now = new Date().toISOString()
+  const payment: InvoicePaymentRecord = {
+    id: data.id || `pay-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    amount,
+    currency: data.currency || existing.currency,
+    method: String(data.method || existing.paymentMethod || 'bank_transfer'),
+    paidAt: data.paidAt || now,
+    transactionId: data.transactionId || '',
+    bankReference: data.bankReference || '',
+    note: data.note || '',
+    createdBy: data.createdBy || 'Admin',
+    createdAt: now,
+  }
+  const updated = normalizeInvoiceRecord({
+    ...existing,
+    payments: [...(existing.payments || []), payment],
+    updatedAt: now,
+  })
+  writeInvoices(invoices.map((invoice) => invoice.id === id ? updated : invoice))
   return updated
 }
 
@@ -296,8 +496,11 @@ function nextInvoiceNumber(settings: InvoiceSettings) {
 export function createInvoiceForOrder(order: {
   id: number
   orderNumber: string
+  email?: string
   paymentMethod: string
   totalAmount: number
+  subtotal?: number
+  shippingCost?: number
   currency?: 'CHF' | 'EUR'
   taxSnapshot?: TaxCalculationResult | null
   firstName?: string
@@ -322,11 +525,11 @@ export function createInvoiceForOrder(order: {
     const qrAllowedPayment = ['vorauszahlung', 'bank_transfer', 'auf_rechnung', 'rechnung'].includes(order.paymentMethod)
     const statusResult = getSwissQrStatus(settings)
     if (settings.qrBillEnabled && statusResult.status === 'vollstaendig' && (qrAllowedPayment || settings.showQrForPaidInvoices)) {
-      qrReference = buildSwissQrPaymentReference(order.id, settings.referenceType)
+      qrReference = normalizeReferenceForType(null, order.id, settings.referenceType)
       payload = buildSwissQrBillPayload(settings, {
         orderNumber: order.orderNumber,
         totalAmount: order.totalAmount,
-        currency: 'CHF',
+        currency: order.currency || settings.currency,
         customerName: `${order.firstName || ''} ${order.lastName || ''}`.trim(),
         customerStreet: order.billingStreet || '',
         customerPostalCode: order.billingPostalCode || '',
@@ -350,6 +553,21 @@ export function createInvoiceForOrder(order: {
     amount: normalizeMoneyAmount(order.totalAmount),
     currency: order.currency || settings.currency,
     dueDate: dueDate.toISOString(),
+    invoiceDate: now.toISOString(),
+    customerEmail: order.email || '',
+    customerName: `${order.firstName || ''} ${order.lastName || ''}`.trim(),
+    billingAddress: {
+      firstName: order.firstName || '',
+      lastName: order.lastName || '',
+      street: order.billingStreet || '',
+      postalCode: order.billingPostalCode || '',
+      city: order.billingCity || '',
+      country: order.billingCountry || 'CH',
+    },
+    source: 'order',
+    paidAmount: 0,
+    openAmount: normalizeMoneyAmount(order.totalAmount),
+    payments: [],
     taxSnapshot: order.taxSnapshot || null,
     swissQrSnapshot: settings,
     qrReference,
@@ -359,6 +577,127 @@ export function createInvoiceForOrder(order: {
   }
   writeJson(INVOICE_FILE, [invoice, ...invoices])
   return invoice
+}
+
+export function createManualInvoice(input: ManualInvoiceInput) {
+  const settings = getInvoiceSettings()
+  const invoices = getInvoices()
+  const now = new Date()
+  const dueDate = input.dueDate ? new Date(input.dueDate) : new Date(now)
+  if (!input.dueDate) dueDate.setDate(dueDate.getDate() + settings.invoiceDueDays)
+  const items = normalizeInvoiceItems(input.items)
+  const amount = normalizeMoneyAmount(items.reduce((sum, item) => sum + item.lineTotal, 0))
+  if (amount <= 0) throw new Error('Die Rechnung muss mindestens eine Position mit Betrag enthalten.')
+  const customerName = String(input.customerName || '').trim()
+  const billingAddress = normalizeInvoiceAddress(input.billingAddress, customerName, input.customerCompany)
+
+  let payload: string | null = null
+  let qrReference: string | null = null
+  let status: InvoiceStatus = input.status === 'Entwurf' ? 'Entwurf' : 'Offen'
+  try {
+    const statusResult = getSwissQrStatus(settings)
+    if (settings.qrBillEnabled && statusResult.status === 'vollstaendig') {
+      const seed = Math.max(0, ...invoices.map((item) => item.id)) + 1
+      qrReference = normalizeReferenceForType(null, seed, settings.referenceType)
+      payload = buildSwissQrBillPayload(settings, {
+        orderNumber: input.orderNumber || `MAN-${seed}`,
+        totalAmount: amount,
+        currency: input.currency || settings.currency,
+        customerName,
+        customerStreet: billingAddress.street,
+        customerPostalCode: billingAddress.postalCode,
+        customerCity: billingAddress.city,
+        customerCountry: billingAddress.country,
+      }, qrReference)
+    } else if (settings.qrBillEnabled && statusResult.status !== 'vollstaendig') {
+      status = 'settings_required'
+    }
+  } catch {
+    status = 'settings_required'
+  }
+
+  const invoice: InvoiceRecord = normalizeInvoiceRecord({
+    id: Math.max(0, ...invoices.map((item) => item.id)) + 1,
+    orderId: 0,
+    orderNumber: input.orderNumber || '',
+    invoiceNumber: nextInvoiceNumber(settings),
+    status,
+    paymentMethod: input.paymentMethod || 'auf_rechnung',
+    amount,
+    currency: input.currency || settings.currency,
+    dueDate: dueDate.toISOString(),
+    invoiceDate: input.invoiceDate ? new Date(input.invoiceDate).toISOString() : now.toISOString(),
+    serviceDate: input.serviceDate ? new Date(input.serviceDate).toISOString() : '',
+    customerEmail: String(input.customerEmail || '').trim().toLowerCase(),
+    customerPhone: String(input.customerPhone || '').trim(),
+    customerName,
+    customerCompany: String(input.customerCompany || '').trim(),
+    customerUid: String(input.customerUid || '').trim(),
+    billingAddress,
+    shippingAddress: input.shippingAddress ? normalizeInvoiceAddress(input.shippingAddress, customerName, input.customerCompany) : null,
+    items,
+    notes: String(input.notes || '').trim(),
+    internalNotes: String(input.internalNotes || '').trim(),
+    source: 'manual',
+    paidAmount: 0,
+    openAmount: amount,
+    payments: [],
+    taxSnapshot: null,
+    swissQrSnapshot: settings,
+    qrReference,
+    swissQrPayload: payload,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  })
+  writeInvoices([invoice, ...invoices])
+  return invoice
+}
+
+function normalizeInvoiceItems(items?: Array<Partial<InvoiceLineItem>>) {
+  const normalized = (items || []).map((item, index) => {
+    const quantity = Math.max(0, Number(item.quantity || 0))
+    const unitPrice = normalizeMoneyAmount(item.unitPrice || 0)
+    const discountPercent = Math.max(0, Math.min(100, Number(item.discountPercent || 0)))
+    const gross = normalizeMoneyAmount(quantity * unitPrice)
+    const lineTotal = normalizeMoneyAmount(gross - (gross * discountPercent / 100))
+    return {
+      id: item.id || `line-${index + 1}`,
+      name: String(item.name || '').trim(),
+      description: String(item.description || '').trim(),
+      sku: String(item.sku || '').trim(),
+      quantity,
+      unit: String(item.unit || 'Stk.').trim(),
+      unitPrice,
+      discountPercent,
+      taxRate: Number(item.taxRate || 0),
+      lineTotal,
+    }
+  }).filter((item) => item.name && item.quantity > 0 && item.unitPrice >= 0)
+  return normalized.length ? normalized : [{
+    id: 'line-1',
+    name: 'Manuelle Rechnungsposition',
+    description: '',
+    sku: '',
+    quantity: 1,
+    unit: 'Stk.',
+    unitPrice: 0,
+    discountPercent: 0,
+    taxRate: 0,
+    lineTotal: 0,
+  }]
+}
+
+function normalizeInvoiceAddress(address: Partial<InvoiceAddress> | null | undefined, fallbackName = '', fallbackCompany = ''): InvoiceAddress {
+  const [firstName = '', ...lastNameParts] = fallbackName.split(/\s+/).filter(Boolean)
+  return {
+    company: String(address?.company || fallbackCompany || '').trim(),
+    firstName: String(address?.firstName || firstName || '').trim(),
+    lastName: String(address?.lastName || lastNameParts.join(' ') || '').trim(),
+    street: String(address?.street || '').trim(),
+    postalCode: String(address?.postalCode || '').trim(),
+    city: String(address?.city || '').trim(),
+    country: String(address?.country || 'CH').trim().toUpperCase(),
+  }
 }
 
 function buildReference(orderId: number, type: ReferenceType) {
@@ -397,7 +736,7 @@ function buildSwissQrPayload(settings: InvoiceSettings, order: { orderNumber: st
   const referenceType = settings.referenceType
   return [
     'SPC',
-    settings.swissQrVersion,
+    '0200',
     '1',
     account,
     'K',
@@ -431,7 +770,7 @@ function buildSwissQrPayload(settings: InvoiceSettings, order: { orderNumber: st
 }
 
 export function renderInvoicePdfBuffer(invoice: InvoiceRecord) {
-  const settings = invoice.swissQrSnapshot || getInvoiceSettings()
+  const settings = resolveRenderableInvoiceSettings(invoice)
   const order = getStoredOrders().find((item) => item.id === invoice.orderId || item.orderNumber === invoice.orderNumber)
   return renderSwissQrInvoicePdfBuffer(invoice, order, settings)
 }
@@ -453,7 +792,7 @@ function renderLegacyInvoicePdfBuffer(invoice: InvoiceRecord) {
   const customerStreet = order?.billingStreet || 'Musterstrasse 1'
   const customerCity = `${order?.billingPostalCode || '1234'} ${order?.billingCity || 'Musterstadt'}`.trim()
   const account = settings.referenceType === 'QRR' ? settings.qrIban : settings.iban
-  const reference = invoice.qrReference || settings.standardReference || invoice.orderNumber
+  const reference = normalizeReferenceForType(invoice.qrReference || settings.standardReference, invoice.orderId || 1, settings.referenceType)
   const amount = amountOnly(invoice.amount)
   const content: string[] = []
   const mm = (value: number) => value * 2.8346456693
@@ -535,7 +874,7 @@ function renderLegacyInvoicePdfBuffer(invoice: InvoiceRecord) {
   text(5, 212, 'Konto / Zahlbar an', 6, 'F2')
   ;[account || '-', companyName, companyStreet, companyCity].forEach((value, index) => text(5, 216 + index * 4, value, 6, 'F1'))
   text(5, 237, 'Referenz', 6, 'F2')
-  text(5, 241, reference, 6, 'F1')
+  text(5, 241, formatReference(reference), 6, 'F1')
   text(5, 252, 'Zahlbar durch', 6, 'F2')
   ;[customerName, customerStreet, customerCity].forEach((value, index) => text(5, 256 + index * 4, value, 6, 'F1'))
   text(5, 283, 'Waehrung', 6, 'F2')
@@ -544,7 +883,7 @@ function renderLegacyInvoicePdfBuffer(invoice: InvoiceRecord) {
   text(28, 288, amount, 7, 'F1')
   text(43, 294, 'Annahmestelle', 5, 'F2')
 
-  const swissQrPayload = invoice.swissQrPayload || buildSwissQrPayload(settings, {
+  const swissQrPayload = buildSwissQrBillPayload(settings, {
     orderNumber: invoice.orderNumber,
     totalAmount: invoice.amount,
     currency: invoice.currency,
@@ -557,7 +896,7 @@ function renderLegacyInvoicePdfBuffer(invoice: InvoiceRecord) {
 
   ;[account || '-', companyName, companyStreet, companyCity].forEach((value, index) => text(119, 207 + index * 5, value, 9, index === 0 ? 'F1' : 'F1'))
   text(119, 232, 'Referenz', 7, 'F2')
-  text(119, 237, reference, 8, 'F1')
+  text(119, 237, formatReference(reference), 8, 'F1')
   text(119, 251, 'Zahlbar durch', 7, 'F2')
   ;[customerName, customerStreet, customerCity].forEach((value, index) => text(119, 256 + index * 5, value, 9, 'F1'))
 
@@ -632,18 +971,29 @@ function drawSwissQrCode(content: string[], payload: string, x: number, y: numbe
     content.push(`${drawX.toFixed(2)} ${drawY.toFixed(2)} ${cell.toFixed(2)} ${cell.toFixed(2)} re f`)
   })
 
-  const crossSize = size * 0.17
+  const crossSize = size * 0.12
+  const guardSize = crossSize * 1.28
   const crossX = x + size / 2 - crossSize / 2
   const crossY = y + size / 2 - crossSize / 2
-  content.push(`1 g ${crossX.toFixed(2)} ${crossY.toFixed(2)} ${crossSize.toFixed(2)} ${crossSize.toFixed(2)} re f 0 g`)
+  const guardX = x + size / 2 - guardSize / 2
+  const guardY = y + size / 2 - guardSize / 2
+  content.push(`1 g ${guardX.toFixed(2)} ${guardY.toFixed(2)} ${guardSize.toFixed(2)} ${guardSize.toFixed(2)} re f`)
+  content.push(`0 g ${crossX.toFixed(2)} ${crossY.toFixed(2)} ${crossSize.toFixed(2)} ${crossSize.toFixed(2)} re f`)
   content.push(`${(crossX + crossSize * 0.42).toFixed(2)} ${(crossY + crossSize * 0.18).toFixed(2)} ${(crossSize * 0.16).toFixed(2)} ${(crossSize * 0.64).toFixed(2)} re f`)
   content.push(`${(crossX + crossSize * 0.18).toFixed(2)} ${(crossY + crossSize * 0.42).toFixed(2)} ${(crossSize * 0.64).toFixed(2)} ${(crossSize * 0.16).toFixed(2)} re f`)
 }
 
 export function renderInvoiceHtml(invoice: InvoiceRecord) {
-  const settings = invoice.swissQrSnapshot || getInvoiceSettings()
+  const settings = resolveRenderableInvoiceSettings(invoice)
   const order = getStoredOrders().find((item) => item.id === invoice.orderId || item.orderNumber === invoice.orderNumber)
   return renderInvoiceHtmlDocument({ invoice, order, settings })
+}
+
+function resolveRenderableInvoiceSettings(invoice: InvoiceRecord) {
+  const current = getInvoiceSettings()
+  const snapshot = invoice.swissQrSnapshot || current
+  const status = getSwissQrStatus(snapshot)
+  return status.status === 'vollstaendig' || !current.qrBillEnabled ? snapshot : current
 }
 
 function escapePdf(value: string) {
@@ -652,6 +1002,13 @@ function escapePdf(value: string) {
 
 function amountOnly(value: number) {
   return new Intl.NumberFormat('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(normalizeMoneyAmount(value))
+}
+
+function formatReference(value: string | null) {
+  const reference = String(value || '').replace(/\s+/g, '')
+  if (!reference) return ''
+  if (/^[0-9]{27}$/.test(reference)) return reference.replace(/(.{5})/g, '$1 ').trim()
+  return reference.replace(/(.{4})/g, '$1 ').trim()
 }
 
 function formatDate(value?: string | null) {

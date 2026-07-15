@@ -224,19 +224,34 @@ function buildAdvisorSummary(intent: AiIntent, selected: AiProduct[]) {
 function buildLocalAnswer(message: string, products: StoredProduct[], selected: AiProduct[]) {
   const text = normalize(message)
   const intent = detectIntent(message)
-  const intro = intent === 'checkout'
-    ? 'Ich kann den passenden Artikel für Sie vorbereiten und in den Warenkorb legen. Die Zahlung bestätigen Sie sicher selbst im Checkout.'
-    : intent === 'add_to_cart'
-      ? 'Ich habe den passendsten Artikel für den Warenkorb vorbereitet.'
-      : intent === 'support'
-        ? 'Ich kann Sie direkt zum Support oder zur Kontaktaufnahme führen.'
-        : intent === 'test_drive'
-          ? 'Für eine Probefahrt empfehle ich zuerst das passende Modell auszuwählen und anschliessend den Termin anzufragen.'
-          : text.includes('finanz') || text.includes('rate')
-    ? 'Für Finanzierung und Ratenzahlung eignen sich besonders Modelle mit planbarem Monatsbudget.'
-    : text.includes('zubehor') || text.includes('accessoire') || text.includes('ersatz')
-      ? 'Für Zubehör und Ersatzteile empfehle ich zuerst die passenden Artikel nach Kompatibilität und Nutzung.'
-      : 'Ich habe passende Produkte aus dem MK-eMotors Sortiment für Sie ausgewählt.'
+  const language = /[çğıöşüı]|sat[iı]n|taksit|oner|öner|almak|istiyorum/.test(text) ? 'tr' : 'de'
+  const intro = language === 'tr'
+    ? intent === 'checkout'
+      ? 'Size en uygun ürünü satın alma için hazırlayabilirim; ödeme onayı güvenli checkout aşamasında sizde kalır.'
+      : intent === 'add_to_cart'
+        ? 'Talebinize göre en uygun ürünü sepet için hazırladım.'
+        : intent === 'support'
+          ? 'Sizi doğrudan doğru destek veya servis kanalına yönlendirebilirim.'
+          : intent === 'test_drive'
+            ? 'Probefahrt için önce doğru modeli netleştirip ardından randevu talebini hazırlamak en doğru yol.'
+            : text.includes('finanz') || text.includes('rate') || text.includes('taksit')
+              ? 'Finansman ve taksit için aylık bütçeye en uygun modelleri öne çıkarıyorum.'
+              : text.includes('zubehor') || text.includes('accessoire') || text.includes('ersatz')
+                ? 'Aksesuar ve yedek parçada uyumluluk ve kullanım amacına göre seçim yapmak önemli.'
+                : 'MK-eMotors ürünleri arasından talebinize en uygun seçenekleri seçtim.'
+    : intent === 'checkout'
+      ? 'Ich kann den passenden Artikel für Sie vorbereiten und in den Warenkorb legen. Die Zahlung bestätigen Sie sicher selbst im Checkout.'
+      : intent === 'add_to_cart'
+        ? 'Ich habe den passendsten Artikel für den Warenkorb vorbereitet.'
+        : intent === 'support'
+          ? 'Ich kann Sie direkt zum Support oder zur Kontaktaufnahme führen.'
+          : intent === 'test_drive'
+            ? 'Für eine Probefahrt empfehle ich zuerst das passende Modell auszuwählen und anschliessend den Termin anzufragen.'
+            : text.includes('finanz') || text.includes('rate')
+              ? 'Für Finanzierung und Ratenzahlung eignen sich besonders Modelle mit planbarem Monatsbudget.'
+              : text.includes('zubehor') || text.includes('accessoire') || text.includes('ersatz')
+                ? 'Für Zubehör und Ersatzteile empfehle ich zuerst die passenden Artikel nach Kompatibilität und Nutzung.'
+                : 'Ich habe passende Produkte aus dem MK-eMotors Sortiment für Sie ausgewählt.'
 
   const productLine = selected.length
     ? selected.slice(0, 3).map((product) => `${product.title} (${product.formattedPrice}${product.formattedRegularPrice ? ` statt ${product.formattedRegularPrice}` : ''})`).join(', ')
@@ -244,7 +259,51 @@ function buildLocalAnswer(message: string, products: StoredProduct[], selected: 
       ? `${products[0].title} (${formatMoney(resolveProductPrice(products[0]).effectivePrice, 'CHF')})`
       : 'Aktuell sind keine Produkte im Katalog verfügbar.'
 
-  return `${intro}\n\nMeine Empfehlung: ${productLine}.\n\nWarum: ${selected[0]?.reason || 'Die Auswahl passt am besten zu Ihrer Anfrage.'}\n\nNächster Schritt: Produkt ansehen, in den Warenkorb legen, Probefahrt buchen oder sicher zur Kasse gehen.`
+  const top = selected[0]
+  const second = selected[1]
+  const urgency = top?.discountPercentage
+    ? language === 'tr'
+      ? `Şu an %${top.discountPercentage} indirimde olduğu için beklemeden rezerve etmek mantıklı.`
+      : `Durch den aktuellen Rabatt von ${top.discountPercentage}% lohnt sich eine schnelle Reservation.`
+    : language === 'tr'
+      ? 'Stok ve teslimat durumunu netleştirip satın alma adımına geçebiliriz.'
+      : 'Ich kann Verfügbarkeit, Lieferung und den Kaufabschluss direkt vorbereiten.'
+
+  if (language === 'tr') {
+    return [
+      intro,
+      '',
+      `En güçlü önerim: ${productLine}.`,
+      top ? `Neden ${top.title}: ${top.reason}` : 'Neden: Talebinize göre en uygun ürünleri fiyat, menzil, performans ve stok açısından sıraladım.',
+      second ? `Alternatif: ${second.title}, özellikle farklı bütçe veya kullanım tarzı düşünüyorsanız güçlü ikinci seçenek.` : '',
+      `Satın alma teşviki: ${urgency} İsterseniz ürünü sepete ekleyip güvenli kasaya yönlendirebilirim; ödeme, finansman veya probefahrt seçeneklerini siz onaylarsınız.`,
+      'Size en doğru final öneri için tek soru: daha çok şehir içi kısa mesafe mi, uzun menzil mi, yoksa maksimum performans mı önceliğiniz?',
+    ].filter(Boolean).join('\n')
+  }
+
+  return [
+    intro,
+    '',
+    `Klare Empfehlung: ${productLine}.`,
+    top ? `Warum ${top.title}: ${top.reason}` : 'Warum: Ich habe Preis, Reichweite, Leistung, Lagerstatus und Alltagstauglichkeit priorisiert.',
+    second ? `Premium-Alternative: ${second.title}, falls Budget oder Fahrprofil leicht anders ist.` : '',
+    `Kaufimpuls: ${urgency} Sie können das passende Modell sofort in den Warenkorb legen, eine Probefahrt buchen oder die Finanzierung prüfen.`,
+    'Eine kurze Rückfrage für die perfekte Empfehlung: Ist Ihnen Reichweite, Preis, Leistung oder Führerschein-/Strassenzulassung am wichtigsten?',
+  ].filter(Boolean).join('\n')
+}
+
+function buildProfessionalSystemPrompt(settingsPrompt: string, selectedProducts: StoredProduct[]) {
+  return [
+    stripHtml(settingsPrompt),
+    '',
+    'Du bist MK-eMotors AI, ein ultra-professioneller Verkaufsberater für Schweizer Elektromobilität.',
+    'Antworte in der Sprache des Kunden. Wenn der Kunde Türkisch schreibt, antworte auf Türkisch; sonst Deutsch.',
+    'Arbeite wie ein Senior Sales Advisor: Bedarf kurz analysieren, 1 klare Top-Empfehlung nennen, 1 Alternative nennen, konkrete Kaufargumente liefern, Finanzierung/Probefahrt/Service erwähnen und immer einen starken nächsten Schritt anbieten.',
+    'Verkaufe aktiv, aber seriös: keine falschen Rabatte, keine erfundenen Lieferzeiten, keine medizinischen/rechtlichen Garantien.',
+    'Wenn Produkte im Kontext stehen, nutze deren Namen, Preise, Reichweite, Leistung, Rabatt und Lagerstatus. Empfiehl nicht nur allgemein.',
+    'Wenn der Kunde kaufen, bestellen oder zur Kasse will, formuliere klar, dass das Widget Produktkarten mit Warenkorb und Checkout bereitstellt.',
+    selectedProducts.length > 0 ? `Aktuelle Shortlist: ${selectedProducts.map((product) => product.title).join(', ')}` : '',
+  ].filter(Boolean).join('\n')
 }
 
 export async function POST(request: NextRequest) {
@@ -281,7 +340,7 @@ export async function POST(request: NextRequest) {
             messages: [
               {
                 role: 'system',
-                content: `${stripHtml(settings.ai.systemPrompt)}\n\nProduktkontext:\n${buildProductContext(selectedProducts.length ? selectedProducts : products)}`,
+                content: `${buildProfessionalSystemPrompt(settings.ai.systemPrompt, selectedProducts)}\n\nProduktkontext:\n${buildProductContext(selectedProducts.length ? selectedProducts : products)}`,
               },
               ...history.map((item) => ({ role: item.role, content: String(item.content || '').slice(0, 1200) })),
               { role: 'user', content: message },

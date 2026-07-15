@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import ReCAPTCHA from 'react-google-recaptcha'
 
@@ -29,6 +29,7 @@ export function PremiumContactForm({ recaptchaSiteKey }: ContactFormProps) {
     ort: '',
     land: 'Schweiz',
     produktinteresse: 'Allgemeine Anfrage',
+    purchasedVehicle: '',
     nachricht: '',
   })
 
@@ -38,11 +39,44 @@ export function PremiumContactForm({ recaptchaSiteKey }: ContactFormProps) {
   const [focusedField, setFocusedField] = useState<string>('')
   const recaptchaRef = useRef<ReCAPTCHA>(null)
   const [agreedToTerms, setAgreedToTerms] = useState(false)
+  const [purchasedVehicles, setPurchasedVehicles] = useState<Array<{ label: string; orderNumber: string }>>([])
+  const [vehicleLookupLoading, setVehicleLookupLoading] = useState(false)
 
   // Calculate form progress
   const requiredFields = ['vorname', 'nachname', 'email', 'nachricht']
   const filledRequired = requiredFields.filter((field) => formData[field as keyof typeof formData]).length
   const progress = Math.round((filledRequired / requiredFields.length) * 100)
+  const isServiceRequest = ['Service', 'Ersatzteile'].includes(formData.produktinteresse)
+
+  useEffect(() => {
+    const email = formData.email.trim()
+    if (!isServiceRequest || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setPurchasedVehicles([])
+      return
+    }
+
+    let active = true
+    const timeout = window.setTimeout(() => {
+      setVehicleLookupLoading(true)
+      fetch(`/api/customer-purchases?email=${encodeURIComponent(email)}`, { cache: 'no-store' })
+        .then((response) => response.ok ? response.json() : { vehicles: [] })
+        .then((data) => {
+          if (!active) return
+          setPurchasedVehicles(Array.isArray(data.vehicles) ? data.vehicles : [])
+        })
+        .catch(() => {
+          if (active) setPurchasedVehicles([])
+        })
+        .finally(() => {
+          if (active) setVehicleLookupLoading(false)
+        })
+    }, 450)
+
+    return () => {
+      active = false
+      window.clearTimeout(timeout)
+    }
+  }, [formData.email, isServiceRequest])
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -92,6 +126,7 @@ export function PremiumContactForm({ recaptchaSiteKey }: ContactFormProps) {
         ort: '',
         land: 'Schweiz',
         produktinteresse: 'Allgemeine Anfrage',
+        purchasedVehicle: '',
         nachricht: '',
       })
       setAgreedToTerms(false)
@@ -386,6 +421,34 @@ export function PremiumContactForm({ recaptchaSiteKey }: ContactFormProps) {
             Produktinteresse
           </label>
         </div>
+
+        {isServiceRequest && (
+          <div className="relative rounded-2xl border border-accent/25 bg-accent/10 p-4">
+            <label className="grid gap-2 text-sm font-bold text-foreground">
+              Gekauftes Fahrzeug für diesen Service
+              <select
+                name="purchasedVehicle"
+                value={formData.purchasedVehicle}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-accent/25 bg-white/70 px-4 py-3 text-foreground transition focus:border-accent/70 focus:outline-none focus:ring-2 focus:ring-accent/30 dark:bg-white/10"
+              >
+                <option value="">Kein früher gekauftes Fahrzeug auswählen</option>
+                {purchasedVehicles.map((vehicle) => (
+                  <option key={`${vehicle.orderNumber}-${vehicle.label}`} value={`${vehicle.label} (${vehicle.orderNumber})`}>
+                    {vehicle.label} · {vehicle.orderNumber}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              {vehicleLookupLoading
+                ? 'Gekaufte Fahrzeuge werden gesucht...'
+                : purchasedVehicles.length > 0
+                  ? 'Wir übernehmen Modell und Bestellnummer direkt in Ihre Serviceanfrage.'
+                  : 'Nach Eingabe Ihrer Kauf-E-Mail erscheinen passende E-Scooter oder E-Motors hier.'}
+            </p>
+          </div>
+        )}
 
         {/* Nachricht */}
         <div className="relative">

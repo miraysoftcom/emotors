@@ -4,6 +4,7 @@ import '@fontsource/bebas-neue'
 import './globals.css'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { GlobalAnnouncementPopup } from '@/components/announcements/AnnouncementClientSurfaces'
+import { GlobalSpecialDayCampaignPopup } from '@/components/campaigns/SpecialDayCampaignSurfaces'
 import { TrackingScripts } from '@/components/analytics/TrackingScripts'
 import { ShopAiWidget } from '@/components/ai/ShopAiWidget'
 
@@ -86,6 +87,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <GlobalAnnouncementPopup />
+          <GlobalSpecialDayCampaignPopup />
           <ShopAiWidget />
           <TrackingScripts />
           {process.env.NODE_ENV === 'production' && <Analytics />}

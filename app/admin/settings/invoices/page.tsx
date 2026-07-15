@@ -150,8 +150,8 @@ export default function InvoiceSettingsPage() {
       <section className="rounded-lg border border-border bg-card p-5">
         <h2 className="mb-4 text-xl font-black">Bank & Referenz</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          {field('qrIban', 'QR-IBAN')}
-          {field('iban', 'Normale IBAN')}
+          {field('qrIban', 'QR-IBAN (nur für QRR, IID 30000-31999)')}
+          {field('iban', 'Normale IBAN (für NON oder SCOR)')}
           {field('bankName', 'Bankname')}
           {field('accountHolder', 'Kontoinhaber')}
           {field('bic', 'BIC / SWIFT')}
@@ -171,7 +171,7 @@ export default function InvoiceSettingsPage() {
             </select>
           </label>
           <div className="md:col-span-2 rounded-lg border border-accent/30 bg-accent/10 p-4 text-sm text-muted-foreground">
-            Standard-Zahlungsreferenz und Creditor Reference werden beim Speichern automatisch erzeugt, wenn sie leer oder ungültig sind.
+            QRR funktioniert nur mit einer echten QR-IBAN Ihrer Bank. Normale IBANs dürfen nicht als QR-IBAN verwendet werden; wählen Sie dafür NON oder SCOR. Zahlungsreferenzen werden beim Speichern automatisch erzeugt, wenn sie leer oder ungültig sind.
           </div>
           {field('standardReference', 'Standard-Zahlungsreferenz automatisch')}
           {field('creditorReference', 'Creditor Reference automatisch')}

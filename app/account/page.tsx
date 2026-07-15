@@ -400,6 +400,19 @@ export default function AccountPage() {
     return products.filter((product) => productIds.has(Number(product.id)))
   }, [accountData?.orders, products])
 
+  const purchasedServiceVehicles = useMemo(() => {
+    const orders = accountData?.orders || []
+    return orders
+      .filter((order) => !['Storniert', 'Rückerstattet'].includes(order.status))
+      .flatMap((order) => (order.items || []).map((item) => ({
+        label: item.name,
+        value: `${item.name} (${order.orderNumber})`,
+        orderNumber: order.orderNumber,
+        vehicleType: inferVehicleTypeFromProductName(item.name),
+      })))
+      .filter((item) => item.label)
+  }, [accountData?.orders])
+
   const unreadCount = announcements.filter((item) => !item.isRead).length
   const customerName = [accountData?.account.firstName, accountData?.account.lastName].filter(Boolean).join(' ') || authenticatedUser?.name || 'Kunde'
 
@@ -1039,7 +1052,7 @@ export default function AccountPage() {
             </div>
           )}
 
-          <div className="grid gap-8 lg:grid-cols-[18rem_1fr]">
+          <div className="grid min-w-0 gap-8 lg:grid-cols-[18rem_minmax(0,1fr)]">
             <aside className="account-premium-border account-surface h-fit p-4 lg:sticky lg:top-24">
               <div className="mb-4 rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.09] to-white/[0.035] p-4">
                 <div className="flex items-center gap-3">
@@ -1091,7 +1104,7 @@ export default function AccountPage() {
               </nav>
             </aside>
 
-            <div className="min-w-0 space-y-6">
+            <div className="min-w-0 overflow-hidden space-y-6">
               {activeTab === 'overview' && (
                 <>
                   <div className="grid gap-4 md:grid-cols-4">
@@ -1276,6 +1289,7 @@ export default function AccountPage() {
                   loading={loading}
                   requests={accountData?.requests?.filter((item) => item.type === 'service') || []}
                   products={products}
+                  purchasedVehicles={purchasedServiceVehicles}
                   onChange={(field, value) => setRequestForm((current) => ({ ...current, [field]: value }))}
                 />
               )}
@@ -1414,14 +1428,14 @@ function QuickTile({ icon: Icon, title, text, onClick }: { icon: LucideIcon; tit
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card className="account-premium-border account-surface border-white/10 text-white">
+    <Card className="account-premium-border account-surface min-w-0 border-white/10 text-white">
       <CardHeader className="border-white/10">
         <div>
           <p className="account-kicker mb-2">Customer Cockpit</p>
           <CardTitle className="text-2xl font-black tracking-tight text-white md:text-3xl">{title}</CardTitle>
         </div>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="min-w-0">{children}</CardContent>
     </Card>
   )
 }
@@ -2475,11 +2489,20 @@ function formatDate(value: string) {
   return date.toLocaleDateString('de-CH')
 }
 
+function inferVehicleTypeFromProductName(name: string) {
+  const text = name.toLowerCase()
+  if (text.includes('moped') || text.includes('roller')) return 'E-Moped'
+  if (text.includes('motorrad') || text.includes('motorcycle')) return 'E-Motorrad'
+  if (text.includes('bike') || text.includes('velo')) return 'E-Bike'
+  return 'E-Scooter'
+}
+
 function ServiceMapPanel({
   form,
   loading,
   requests,
   products,
+  purchasedVehicles,
   onChange,
   onWarranty,
   onService,
@@ -2488,6 +2511,7 @@ function ServiceMapPanel({
   loading: boolean
   requests: CustomerRequestRecord[]
   products: ShopProduct[]
+  purchasedVehicles: Array<{ label: string; value: string; orderNumber: string; vehicleType: string }>
   onChange: (field: keyof RequestFormState, value: string) => void
   onWarranty: () => void
   onService: (event: FormEvent) => void
@@ -2510,6 +2534,16 @@ function ServiceMapPanel({
   const vehicleTypes = ['E-Scooter', 'E-Moped', 'E-Motorrad', 'E-Bike', 'Zubehör / Ersatzteil']
   const urgencies = ['Normal', 'Schnell', 'Fahrzeug steht', 'Unfall / Sicherheitsrelevant']
   const handoverOptions = ['Vor Ort in Dornach', 'Abholung Basel', 'Mobiler Service', 'Rückruf zur Terminplanung']
+
+  const selectPurchasedVehicle = (value: string) => {
+    const vehicle = purchasedVehicles.find((item) => item.value === value)
+    onChange('product', value)
+    if (vehicle) {
+      onChange('orderNumber', vehicle.orderNumber)
+      onChange('vehicleType', vehicle.vehicleType)
+      if (!form.subject) onChange('subject', `Servicetermin für ${vehicle.label}`)
+    }
+  }
 
   const statusLabels: Record<CustomerRequestRecord['status'], string> = {
     new: 'Eingegangen',
@@ -2571,8 +2605,8 @@ function ServiceMapPanel({
           </div>
         </section>
 
-        <div className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
-          <section className="space-y-4">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+          <section className="min-w-0 space-y-4">
             <div className="rounded-3xl border border-border/60 bg-secondary/40 p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -2604,7 +2638,7 @@ function ServiceMapPanel({
                     Noch keine Serviceanfrage vorhanden. Nach dem Absenden erscheint Ihr Ticket hier mit Status und Antworten.
                   </p>
                 ) : requests.slice(0, 5).map((request) => (
-                  <div key={request.id} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+                  <div key={request.id} className="min-w-0 rounded-2xl border border-border/60 bg-card/70 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-black">{request.subject}</p>
@@ -2629,7 +2663,7 @@ function ServiceMapPanel({
             </div>
           </section>
 
-          <form onSubmit={onService} className="rounded-[2rem] border border-border/60 bg-card/80 p-5 shadow-xl md:p-6">
+          <form onSubmit={onService} className="min-w-0 rounded-[2rem] border border-border/60 bg-card/80 p-5 shadow-xl md:p-6">
             <div className="flex flex-col gap-3 border-b border-border/60 pb-5 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-accent">Neues Ticket</p>
@@ -2642,6 +2676,19 @@ function ServiceMapPanel({
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {purchasedVehicles.length > 0 && (
+                <label className="grid gap-2 text-sm font-bold md:col-span-2">
+                  Bereits bei MK-eMotors gekauftes Fahrzeug
+                  <select value={form.product} onChange={(event) => selectPurchasedVehicle(event.target.value)} className="account-input">
+                    <option value="">Fahrzeug aus meinen Bestellungen auswählen</option>
+                    {purchasedVehicles.map((vehicle) => (
+                      <option key={`${vehicle.orderNumber}-${vehicle.label}`} value={vehicle.value}>
+                        {vehicle.label} · {vehicle.orderNumber}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="grid gap-2 text-sm font-bold">
                 Fahrzeugtyp
                 <select value={form.vehicleType} onChange={(event) => onChange('vehicleType', event.target.value)} className="account-input">
@@ -2698,10 +2745,10 @@ function ServiceMapPanel({
               />
             </label>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs leading-5 text-muted-foreground">
+              <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
                 Nach dem Absenden erhalten Sie Updates direkt im Meinkonto. Admin-Antworten erscheinen im Ticketverlauf.
               </p>
-              <Button variant="primary" disabled={loading}>
+              <Button variant="primary" disabled={loading} className="shrink-0">
                 {loading ? 'Wird gesendet...' : 'Serviceanfrage senden'}
               </Button>
             </div>

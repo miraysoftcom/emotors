@@ -15,11 +15,13 @@ import { EstimateAppointmentSection } from '@/components/sections/EstimateAppoin
 import { MarqueeBannerRenderer } from '@/components/sections/MarqueeBannerRenderer'
 import { ManagedHero } from '@/components/sections/ManagedHero'
 import { HomeAnnouncementBanner, HomeAnnouncementMarquee, HomeAnnouncementTop } from '@/components/announcements/HomeAnnouncements'
+import { SpecialDayHomepageBanner } from '@/components/campaigns/SpecialDayCampaignSurfaces'
 import { SplitTitle } from '@/components/common/SplitTitle'
 import { db } from '@/lib/db'
 import { products, services, reviews, orders, sliders } from '@/lib/db/schema'
 import { getCategories } from '@/lib/categories-store'
 import { getStoredProducts, type StoredProduct } from '@/lib/products-store'
+import { getStoredSliders } from '@/lib/sliders-store'
 import { getStoredOrders } from '@/lib/orders-store'
 import { resolveProductPrice } from '@/lib/product-price'
 import { getHeroSettings } from '@/lib/hero-settings-store'
@@ -165,15 +167,16 @@ async function getApprovedReviews() {
 
 async function getActiveSliders() {
   try {
-    if (!db) return []
+    if (!db) return getStoredSliders().filter((slide) => slide.active)
 
-    return await db
+    const result = await db
       .select()
       .from(sliders)
       .where(eq(sliders.active, true))
       .orderBy(sliders.order)
+    return result.length ? result : getStoredSliders().filter((slide) => slide.active)
   } catch {
-    return []
+    return getStoredSliders().filter((slide) => slide.active)
   }
 }
 
@@ -267,6 +270,7 @@ export default async function Page() {
           description="Entdecken Sie die Zukunft der Fortbewegung mit unserer exklusiven Kollektion hochwertiger Elektromobilität."
         />
       )}
+      <SpecialDayHomepageBanner placement="hero_banner" />
       <HomeAnnouncementMarquee />
       <MarqueeBannerRenderer placement="homepage_after_hero" pagePath="/" />
       <HomeAnnouncementBanner />

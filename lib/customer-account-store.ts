@@ -233,7 +233,12 @@ export function getCustomerOrders(email: string, userId?: string | null) {
 }
 
 export function getCustomerInvoices(email: string, userId?: string | null) {
+  const normalizedEmail = email.trim().toLowerCase()
   const orders = getCustomerOrders(email, userId)
   const orderKeys = new Set(orders.flatMap((order) => [String(order.id), order.orderNumber]))
-  return getInvoices().filter((invoice) => orderKeys.has(String(invoice.orderId)) || orderKeys.has(invoice.orderNumber))
+  return getInvoices().filter((invoice) => (
+    orderKeys.has(String(invoice.orderId)) ||
+    orderKeys.has(invoice.orderNumber) ||
+    String(invoice.customerEmail || '').trim().toLowerCase() === normalizedEmail
+  ))
 }

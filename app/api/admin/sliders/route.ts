@@ -1,69 +1,106 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { sliders } from '@/lib/db/schema'
-import { eq, desc } from 'drizzle-orm'
-import { NextRequest, NextResponse } from 'next/server'
+import { isAdminRequestAuthorized } from '@/lib/admin-auth'
+import { deleteStoredSlider, getStoredSliders, reorderStoredSliders, upsertStoredSlider } from '@/lib/sliders-store'
 
-export async function GET() {
-  try {
-    const data = await db
-      .select()
-      .from(sliders)
-      .orderBy(sliders.position)
-    
-    return NextResponse.json(data)
-  } catch (error) {
-    console.error('Error fetching sliders:', error)
-    return NextResponse.json({ error: 'Failed to fetch sliders' }, { status: 500 })
+function assertAdmin(request: NextRequest) {
+  return isAdminRequestAuthorized(request.cookies.get('adminToken')?.value)
+}
+
+function normalizeDbSlider(row: any) {
+  return {
+    ...row,
+    overlayOpacity: row.overlayOpacity ?? 42,
+    textColor: row.textColor ?? '#ffffff',
+    backgroundColor: row.backgroundColor ?? '#050b08',
   }
+}
+
+export async function GET(request: NextRequest) {
+  if (!assertAdmin(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    if (db) {
+      const data = await db.select().from(sliders).orderBy(sliders.order)
+      return NextResponse.json({ sliders: data.map(normalizeDbSlider), source: 'database' })
+    }
+  } catch (error) {
+    console.error('[Admin Sliders DB GET Error]', error)
+  }
+  return NextResponse.json({ sliders: getStoredSliders(), source: 'local' })
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    
-    const result = await db.insert(sliders).values(body).returning()
-    
-    return NextResponse.json(result[0], { status: 201 })
-  } catch (error) {
-    console.error('Error creating slider:', error)
-    return NextResponse.json({ error: 'Failed to create slider' }, { status: 500 })
-  }
-}
+  if (!assertAdmin(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const body = await request.json()
+  const action = String(body.action || 'upsert')
 
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { id, ...data } = body
-    
-    const result = await db
-      .update(sliders)
-      .set(data)
-      .where(eq(sliders.id, id))
-      .returning()
-    
-    return NextResponse.json(result[0])
-  } catch (error) {
-    console.error('Error updating slider:', error)
-    return NextResponse.json({ error: 'Failed to update slider' }, { status: 500 })
+  if (action === 'reorder') {
+    const items = Array.isArray(body.items) ? body.items : []
+    if (db) {
+      try {
+        for (const item of items) {
+          await db.update(sliders).set({ order: Number(item.order || 0), updatedAt: new Date() }).where(eq(sliders.id, Number(item.id)))
+        }
+        const data = await db.select().from(sliders).orderBy(sliders.order)
+        return NextResponse.json({ sliders: data.map(normalizeDbSlider), source: 'database' })
+      } catch (error) {
+        console.error('[Admin Sliders DB Reorder Error]', error)
+      }
+    }
+    return NextResponse.json({ sliders: reorderStoredSliders(items), source: 'local' })
   }
+
+  try {
+    if (db) {
+      const payload = toDbPayload(body)
+      if (body.id) {
+        const result = await db.update(sliders).set({ ...payload, updatedAt: new Date() }).where(eq(sliders.id, Number(body.id))).returning()
+        return NextResponse.json({ slider: normalizeDbSlider(result[0]), source: 'database' })
+      }
+      const result = await db.insert(sliders).values(payload).returning()
+      return NextResponse.json({ slider: normalizeDbSlider(result[0]), source: 'database' }, { status: 201 })
+    }
+  } catch (error) {
+    console.error('[Admin Sliders DB Save Error]', error)
+  }
+
+  const slider = upsertStoredSlider(body)
+  return NextResponse.json({ slider, source: 'local' }, { status: body.id ? 200 : 201 })
 }
 
 export async function DELETE(request: NextRequest) {
+  if (!assertAdmin(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const id = Number(request.nextUrl.searchParams.get('id') || 0)
+  if (!id) return NextResponse.json({ error: 'ID fehlt.' }, { status: 400 })
+
   try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-    
-    if (!id) {
-      return NextResponse.json({ error: 'ID is required' }, { status: 400 })
+    if (db) {
+      await db.delete(sliders).where(eq(sliders.id, id))
+      return NextResponse.json({ success: true, source: 'database' })
     }
-    
-    await db
-      .delete(sliders)
-      .where(eq(sliders.id, parseInt(id)))
-    
-    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting slider:', error)
-    return NextResponse.json({ error: 'Failed to delete slider' }, { status: 500 })
+    console.error('[Admin Sliders DB Delete Error]', error)
+  }
+
+  const deleted = deleteStoredSlider(id)
+  if (!deleted) return NextResponse.json({ error: 'Slide nicht gefunden.' }, { status: 404 })
+  return NextResponse.json({ success: true, slider: deleted, source: 'local' })
+}
+
+function toDbPayload(body: any) {
+  return {
+    title: String(body.title || 'Slide'),
+    subtitle: String(body.subtitle || ''),
+    description: String(body.description || ''),
+    desktopImage: String(body.desktopImage || ''),
+    mobileImage: String(body.mobileImage || body.desktopImage || ''),
+    ctaText: String(body.ctaText || ''),
+    ctaLink: String(body.ctaLink || ''),
+    animationType: String(body.animationType || 'zoom'),
+    textPosition: String(body.textPosition || 'center'),
+    order: Number(body.order || 0),
+    active: body.active !== false,
   }
 }

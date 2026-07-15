@@ -1,447 +1,323 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Plus, Edit2, Trash2, Copy, X, Save } from 'lucide-react'
-import { HtmlEditor } from '@/components/admin/HtmlEditor'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { ArrowDown, ArrowUp, Copy, Eye, ImageIcon, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
+import Link from 'next/link'
 
 interface Slide {
   id: number
   title: string
-  headline: string
-  subHeadline?: string
+  subtitle?: string
   description?: string
-  buttonText1?: string
-  buttonUrl1?: string
-  buttonText2?: string
-  buttonUrl2?: string
-  backgroundImage?: string
-  backgroundVideo?: string
-  backgroundYoutube?: string
-  backgroundMp4?: string
-  productBadge?: string
-  priceText?: string
-  headlineAnimation: string
-  descriptionAnimation: string
-  buttonAnimation: string
-  animationDuration: number
-  textPosition: string
-  overlayOpacity: number
-  active: boolean
+  desktopImage?: string
+  mobileImage?: string
+  ctaText?: string
+  ctaLink?: string
+  animationType?: string
+  textPosition?: string
+  order?: number
+  active?: boolean
+  overlayOpacity?: number
+  textColor?: string
+  backgroundColor?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
-const defaultSlides: Slide[] = [
-  {
-    id: 1,
-    title: 'Slide 1',
-    headline: 'Elektrische Mobilität der Zukunft',
-    subHeadline: 'Premium eMotor & eScooter aus der Schweiz',
-    description: 'Entdecke die neuesten Modelle mit innovativer Technologie',
-    buttonText1: 'Jetzt entdecken',
-    buttonUrl1: '/produkte',
-    buttonText2: 'Probefahrt buchen',
-    buttonUrl2: '/contact',
-    backgroundImage: 'https://images.unsplash.com/photo-1563201487-ce2d45831dce?w=1920&h=1080&fit=crop',
-    productBadge: 'Neu 2024',
-    priceText: 'Ab CHF 499',
-    headlineAnimation: 'slideUp',
-    descriptionAnimation: 'slideUp',
-    buttonAnimation: 'slideUp',
-    animationDuration: 600,
-    textPosition: 'center',
-    overlayOpacity: 30,
-    active: true,
-  },
-]
+const blankSlide = (order = 1): Slide => ({
+  id: 0,
+  title: 'Neuer Premium Slide',
+  subtitle: 'MK-eMotors Dornach',
+  description: 'Kuratiert, hochwertig und bereit für Ihre nächste Kampagne.',
+  desktopImage: '/hero-background.png',
+  mobileImage: '/hero-background.png',
+  ctaText: 'Jetzt entdecken',
+  ctaLink: '/produkte',
+  animationType: 'zoom',
+  textPosition: 'center',
+  order,
+  active: true,
+  overlayOpacity: 42,
+  textColor: '#ffffff',
+  backgroundColor: '#050b08',
+})
 
 export default function SlidersManagement() {
-  const [slides, setSlides] = useState<Slide[]>(defaultSlides)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState<Partial<Slide>>({})
+  const [slides, setSlides] = useState<Slide[]>([])
+  const [editing, setEditing] = useState<Slide | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [source, setSource] = useState('')
 
-  const addSlide = () => {
-    const newSlide: Slide = {
-      id: Math.max(...slides.map(s => s.id), 0) + 1,
-      title: `Slide ${slides.length + 1}`,
-      headline: 'Neuer Slide',
-      headlineAnimation: 'slideUp',
-      descriptionAnimation: 'slideUp',
-      buttonAnimation: 'slideUp',
-      animationDuration: 600,
-      textPosition: 'center',
-      overlayOpacity: 30,
-      active: true,
+  async function loadSlides() {
+    setLoading(true)
+    const response = await fetch('/api/admin/sliders', { credentials: 'include', cache: 'no-store' })
+    const data = await response.json()
+    setSlides(Array.isArray(data.sliders) ? data.sliders : [])
+    setSource(data.source || '')
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadSlides()
+  }, [])
+
+  const stats = useMemo(() => ({
+    total: slides.length,
+    active: slides.filter((slide) => slide.active).length,
+    inactive: slides.filter((slide) => !slide.active).length,
+    media: slides.filter((slide) => slide.desktopImage || slide.mobileImage).length,
+  }), [slides])
+
+  async function saveSlide(event: FormEvent) {
+    event.preventDefault()
+    if (!editing) return
+    setSaving(true)
+    const response = await fetch('/api/admin/sliders', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editing),
+    })
+    const data = await response.json()
+    setSaving(false)
+    if (!response.ok) {
+      window.alert(data.error || 'Slide konnte nicht gespeichert werden.')
+      return
     }
-    setSlides([...slides, newSlide])
-    setEditingId(newSlide.id)
-    setFormData(newSlide)
-    setShowForm(true)
+    setEditing(null)
+    await loadSlides()
   }
 
-  const editSlide = (slide: Slide) => {
-    setEditingId(slide.id)
-    setFormData({ ...slide })
-    setShowForm(true)
+  async function removeSlide(slide: Slide) {
+    if (!window.confirm(`Slide "${slide.title}" löschen?`)) return
+    const response = await fetch(`/api/admin/sliders?id=${slide.id}`, { method: 'DELETE', credentials: 'include' })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) window.alert(data.error || 'Slide konnte nicht gelöscht werden.')
+    await loadSlides()
   }
 
-  const saveSlide = () => {
-    if (editingId) {
-      setSlides(slides.map(s => s.id === editingId ? { ...s, ...formData } as Slide : s))
-      setEditingId(null)
-      setShowForm(false)
-      setFormData({})
-    }
+  async function toggleSlide(slide: Slide) {
+    await saveInline({ ...slide, active: !slide.active })
   }
 
-  const duplicateSlide = (id: number) => {
-    const slide = slides.find(s => s.id === id)
-    if (slide) {
-      const newSlide = {
-        ...slide,
-        id: Math.max(...slides.map(s => s.id)) + 1,
-        title: `${slide.title} (Kopie)`,
-      }
-      setSlides([...slides, newSlide])
-    }
+  async function duplicateSlide(slide: Slide) {
+    const copy = { ...slide, id: 0, title: `${slide.title} Kopie`, order: slides.length + 1 }
+    await saveInline(copy)
   }
 
-  const deleteSlide = (id: number) => {
-    if (slides.length > 1) {
-      setSlides(slides.filter(s => s.id !== id))
-    }
+  async function moveSlide(slide: Slide, direction: -1 | 1) {
+    const ordered = [...slides].sort((a, b) => (a.order || 0) - (b.order || 0))
+    const index = ordered.findIndex((item) => item.id === slide.id)
+    const target = index + direction
+    if (target < 0 || target >= ordered.length) return
+    const swapped = [...ordered]
+    ;[swapped[index], swapped[target]] = [swapped[target], swapped[index]]
+    const items = swapped.map((item, itemIndex) => ({ id: item.id, order: itemIndex + 1 }))
+    await fetch('/api/admin/sliders', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reorder', items }),
+    })
+    await loadSlides()
   }
 
-  const toggleActive = (id: number) => {
-    setSlides(
-      slides.map(s =>
-        s.id === id ? { ...s, active: !s.active } : s
-      )
-    )
-  }
-
-  const handleCancel = () => {
-    setEditingId(null)
-    setShowForm(false)
-    setFormData({})
+  async function saveInline(slide: Slide) {
+    await fetch('/api/admin/sliders', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(slide),
+    })
+    await loadSlides()
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold">Slider Verwaltung</h1>
-          {!showForm && (
-            <button
-              onClick={addSlide}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg transition-colors font-semibold"
-            >
-              <Plus size={20} />
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#040806] p-6 text-white shadow-2xl">
+        <div className="pointer-events-none absolute inset-0 opacity-50 [background:radial-gradient(circle_at_20%_10%,rgba(38,216,114,.26),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,.12),transparent_28%)]" />
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.32em] text-accent">Homepage Hero Experience</p>
+            <h1 className="mt-2 text-4xl font-black">Slider Verwaltung</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-300">Premium Hero Slides mit Live Preview, sauberer Speicherung, Reihenfolge und responsive Bildsteuerung.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/" target="_blank" className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 font-black hover:bg-white/10">
+              <Eye className="h-4 w-4" />
+              Startseite ansehen
+            </Link>
+            <button onClick={() => setEditing(blankSlide(slides.length + 1))} className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 font-black text-accent-foreground">
+              <Plus className="h-4 w-4" />
               Neuer Slide
             </button>
-          )}
+          </div>
         </div>
+      </div>
 
-        {/* Edit Form */}
-        {showForm && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-slate-800 rounded-lg p-6 border border-slate-700 mb-8"
-          >
-            <h2 className="text-2xl font-bold mb-6">
-              {editingId ? 'Slide bearbeiten' : 'Neuer Slide'}
-            </h2>
+      <div className="grid gap-3 md:grid-cols-4">
+        <Stat label="Slides" value={String(stats.total)} />
+        <Stat label="Aktiv" value={String(stats.active)} />
+        <Stat label="Inaktiv" value={String(stats.inactive)} />
+        <Stat label="Medien" value={String(stats.media)} />
+      </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Titel</label>
-                <input
-                  type="text"
-                  value={formData.title || ''}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Slide Titel"
-                />
+      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+        Datenquelle: <span className="font-black text-foreground">{source || 'auto'}</span>. Änderungen werden über `/api/admin/sliders` gespeichert und auf der Startseite verwendet.
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_24rem]">
+        <section className="space-y-4">
+          {loading && <div className="rounded-lg border border-border bg-card p-10 text-center text-muted-foreground">Slides werden geladen...</div>}
+          {!loading && slides.length === 0 && (
+            <button onClick={() => setEditing(blankSlide(1))} className="w-full rounded-lg border border-dashed border-border bg-card p-10 text-center font-black hover:border-accent">
+              Ersten Premium Slide erstellen
+            </button>
+          )}
+          {slides.map((slide, index) => (
+            <article key={slide.id} className="overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+              <div className="grid md:grid-cols-[16rem_1fr]">
+                <div className="relative min-h-48 bg-black">
+                  {slide.desktopImage ? <img src={slide.desktopImage} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-muted-foreground"><ImageIcon /></div>}
+                  <div className="absolute inset-0 bg-black/35" />
+                  <span className="absolute left-3 top-3 rounded-full bg-black/65 px-3 py-1 text-xs font-black text-white">#{slide.order || index + 1}</span>
+                </div>
+                <div className="p-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-2xl font-black">{slide.title}</h2>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black ${slide.active ? 'bg-emerald-500/15 text-emerald-500' : 'bg-red-500/15 text-red-500'}`}>{slide.active ? 'Aktiv' : 'Inaktiv'}</span>
+                      </div>
+                      {slide.subtitle && <p className="mt-1 font-bold text-accent">{slide.subtitle}</p>}
+                      {slide.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{stripHtml(slide.description)}</p>}
+                      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+                        <Meta label="Animation" value={slide.animationType || 'zoom'} />
+                        <Meta label="Position" value={slide.textPosition || 'center'} />
+                        <Meta label="Overlay" value={`${slide.overlayOpacity ?? 42}%`} />
+                        <Meta label="CTA" value={slide.ctaText || '-'} />
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <IconButton label="Hoch" onClick={() => moveSlide(slide, -1)} disabled={index === 0}><ArrowUp className="h-4 w-4" /></IconButton>
+                      <IconButton label="Runter" onClick={() => moveSlide(slide, 1)} disabled={index === slides.length - 1}><ArrowDown className="h-4 w-4" /></IconButton>
+                      <IconButton label="Aktiv" onClick={() => toggleSlide(slide)}>{slide.active ? <X className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}</IconButton>
+                      <IconButton label="Duplizieren" onClick={() => duplicateSlide(slide)}><Copy className="h-4 w-4" /></IconButton>
+                      <IconButton label="Bearbeiten" onClick={() => setEditing(slide)}><Save className="h-4 w-4" /></IconButton>
+                      <IconButton label="Löschen" onClick={() => removeSlide(slide)}><Trash2 className="h-4 w-4" /></IconButton>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <aside className="sticky top-24 h-fit rounded-2xl border border-border bg-card p-4">
+          <p className="mb-3 text-sm font-black uppercase tracking-widest text-muted-foreground">Live Preview</p>
+          <SlidePreview slide={editing || slides[0] || blankSlide(1)} compact />
+        </aside>
+      </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4 backdrop-blur">
+          <form onSubmit={saveSlide} className="mx-auto grid max-w-6xl gap-5 rounded-2xl border border-border bg-background p-5 shadow-2xl xl:grid-cols-[1fr_28rem]">
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.28em] text-accent">Slide Editor</p>
+                  <h2 className="text-2xl font-black">{editing.id ? 'Slide bearbeiten' : 'Neuer Slide'}</h2>
+                </div>
+                <button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-border p-2"><X className="h-5 w-5" /></button>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Headline</label>
-                <input
-                  type="text"
-                  value={formData.headline || ''}
-                  onChange={e => setFormData({ ...formData, headline: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Hauptüberschrift"
-                />
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Titel" value={editing.title} onChange={(value) => setEditing({ ...editing, title: value })} required />
+                <Field label="Untertitel" value={editing.subtitle || ''} onChange={(value) => setEditing({ ...editing, subtitle: value })} />
+                <Field label="Desktop Bild URL" value={editing.desktopImage || ''} onChange={(value) => setEditing({ ...editing, desktopImage: value })} />
+                <Field label="Mobile Bild URL" value={editing.mobileImage || ''} onChange={(value) => setEditing({ ...editing, mobileImage: value })} />
+                <Field label="CTA Text" value={editing.ctaText || ''} onChange={(value) => setEditing({ ...editing, ctaText: value })} />
+                <Field label="CTA Link" value={editing.ctaLink || ''} onChange={(value) => setEditing({ ...editing, ctaLink: value })} />
+                <label className="space-y-1 text-sm font-bold">
+                  <span>Animation</span>
+                  <select value={editing.animationType || 'zoom'} onChange={(event) => setEditing({ ...editing, animationType: event.target.value })} className="w-full rounded-lg border border-border bg-card px-3 py-2">
+                    <option value="zoom">Ken Burns Zoom</option>
+                    <option value="fade">Fade</option>
+                    <option value="slide">Slide</option>
+                    <option value="parallax">Parallax</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm font-bold">
+                  <span>Textposition</span>
+                  <select value={editing.textPosition || 'center'} onChange={(event) => setEditing({ ...editing, textPosition: event.target.value })} className="w-full rounded-lg border border-border bg-card px-3 py-2">
+                    <option value="left">Links</option>
+                    <option value="center">Mitte</option>
+                    <option value="right">Rechts</option>
+                  </select>
+                </label>
+                <Field label="Reihenfolge" type="number" value={String(editing.order || 1)} onChange={(value) => setEditing({ ...editing, order: Number(value) })} />
+                <Field label="Overlay %" type="number" value={String(editing.overlayOpacity ?? 42)} onChange={(value) => setEditing({ ...editing, overlayOpacity: Number(value) })} />
               </div>
 
-              <div className="md:col-span-2">
-                <label className="block text-sm font-bold mb-2 text-blue-400">Unter-Headline</label>
-                <input
-                  type="text"
-                  value={formData.subHeadline || ''}
-                  onChange={e => setFormData({ ...formData, subHeadline: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Unterüberschrift"
-                />
-              </div>
+              <textarea value={editing.description || ''} onChange={(event) => setEditing({ ...editing, description: event.target.value })} className="min-h-28 w-full rounded-lg border border-border bg-card px-3 py-2" placeholder="Beschreibung" />
 
-              <div className="md:col-span-2">
-                <label className="block text-sm font-bold mb-2 text-blue-400">Beschreibung</label>
-                <HtmlEditor
-                  value={formData.description || ''}
-                  onChange={(description) => setFormData({ ...formData, description })}
-                  minHeightClassName="min-h-36"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Button 1 Text</label>
-                <input
-                  type="text"
-                  value={formData.buttonText1 || ''}
-                  onChange={e => setFormData({ ...formData, buttonText1: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Text"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Button 1 URL</label>
-                <input
-                  type="text"
-                  value={formData.buttonUrl1 || ''}
-                  onChange={e => setFormData({ ...formData, buttonUrl1: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="/link"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Button 2 Text</label>
-                <input
-                  type="text"
-                  value={formData.buttonText2 || ''}
-                  onChange={e => setFormData({ ...formData, buttonText2: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Text"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Button 2 URL</label>
-                <input
-                  type="text"
-                  value={formData.buttonUrl2 || ''}
-                  onChange={e => setFormData({ ...formData, buttonUrl2: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="/link"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-bold mb-2 text-blue-400">Hintergrund Bild URL</label>
-                <input
-                  type="text"
-                  value={formData.backgroundImage || ''}
-                  onChange={e => setFormData({ ...formData, backgroundImage: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="https://..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Produkt Badge</label>
-                <input
-                  type="text"
-                  value={formData.productBadge || ''}
-                  onChange={e => setFormData({ ...formData, productBadge: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="z.B. Neu 2024"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Preis Text</label>
-                <input
-                  type="text"
-                  value={formData.priceText || ''}
-                  onChange={e => setFormData({ ...formData, priceText: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                  placeholder="Ab CHF 499"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Headline Animation</label>
-                <select
-                  value={formData.headlineAnimation || 'slideUp'}
-                  onChange={e => setFormData({ ...formData, headlineAnimation: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="fade">Fade</option>
-                  <option value="slideUp">Slide Up</option>
-                  <option value="slideLeft">Slide Left</option>
-                  <option value="zoom">Zoom</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Text Position</label>
-                <select
-                  value={formData.textPosition || 'center'}
-                  onChange={e => setFormData({ ...formData, textPosition: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="left">Links</option>
-                  <option value="center">Mitte</option>
-                  <option value="right">Rechts</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Animation Dauer (ms)</label>
-                <input
-                  type="number"
-                  value={formData.animationDuration || 600}
-                  onChange={e => setFormData({ ...formData, animationDuration: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-400">Overlay Opacity (0-100)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={formData.overlayOpacity || 30}
-                  onChange={e => setFormData({ ...formData, overlayOpacity: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.active || false}
-                    onChange={e => setFormData({ ...formData, active: e.target.checked })}
-                    className="w-5 h-5 rounded"
-                  />
-                  <span className="text-sm font-bold">Aktiv</span>
+              <div className="grid gap-4 md:grid-cols-3">
+                <ColorField label="Textfarbe" value={editing.textColor || '#ffffff'} onChange={(value) => setEditing({ ...editing, textColor: value })} />
+                <ColorField label="Fallback Hintergrund" value={editing.backgroundColor || '#050b08'} onChange={(value) => setEditing({ ...editing, backgroundColor: value })} />
+                <label className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm font-black">
+                  <input type="checkbox" checked={editing.active !== false} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} className="h-5 w-5" />
+                  Aktiv veröffentlichen
                 </label>
               </div>
-            </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={saveSlide}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg transition-colors font-semibold"
-              >
-                <Save size={18} />
-                Speichern
-              </button>
-              <button
-                onClick={handleCancel}
-                className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 px-6 py-2 rounded-lg transition-colors font-semibold"
-              >
-                <X size={18} />
-                Abbrechen
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Slides List */}
-        <div className="space-y-4">
-          {slides.map((slide) => (
-            <motion.div
-              key={slide.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-slate-800 rounded-lg p-6 border border-slate-700 hover:border-blue-500 transition-colors"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-bold">{slide.headline}</h3>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${slide.active ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'}`}>
-                      {slide.active ? 'Aktiv' : 'Inaktiv'}
-                    </span>
-                  </div>
-                  {slide.subHeadline && (
-                    <p className="text-gray-300 mb-2">{slide.subHeadline}</p>
-                  )}
-                  {slide.description && (
-                    <p className="text-gray-400 text-sm mb-3 max-w-2xl">{stripHtml(slide.description)}</p>
-                  )}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-400">Animation:</span>
-                      <p className="text-white font-semibold">{slide.headlineAnimation}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Position:</span>
-                      <p className="text-white font-semibold">{slide.textPosition}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Dauer:</span>
-                      <p className="text-white font-semibold">{slide.animationDuration}ms</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Overlay:</span>
-                      <p className="text-white font-semibold">{slide.overlayOpacity}%</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Buttons:</span>
-                      <p className="text-white font-semibold">{slide.buttonText1 && slide.buttonText2 ? '2' : slide.buttonText1 ? '1' : '0'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => toggleActive(slide.id)}
-                    className="p-2 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-                    title={slide.active ? 'Deaktivieren' : 'Aktivieren'}
-                  >
-                    {slide.active ? '✓' : '○'}
-                  </button>
-                  <button
-                    onClick={() => editSlide(slide)}
-                    className="p-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  <button
-                    onClick={() => duplicateSlide(slide.id)}
-                    className="p-2 bg-purple-600 hover:bg-purple-700 rounded transition-colors"
-                  >
-                    <Copy size={18} />
-                  </button>
-                  <button
-                    onClick={() => deleteSlide(slide.id)}
-                    disabled={slides.length === 1}
-                    className="p-2 bg-red-600 hover:bg-red-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
+              <div className="flex justify-end gap-3">
+                <button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-border px-4 py-2 font-bold">Abbrechen</button>
+                <button disabled={saving} className="rounded-lg bg-accent px-5 py-2 font-black text-accent-foreground">{saving ? 'Speichert...' : 'Speichern'}</button>
               </div>
-            </motion.div>
-          ))}
+            </div>
+            <SlidePreview slide={editing} />
+          </form>
         </div>
+      )}
+    </div>
+  )
+}
 
-        <div className="mt-8 p-4 bg-blue-900/30 border border-blue-700 rounded-lg">
-          <p className="text-blue-200 text-sm">
-            💡 Alle Änderungen werden lokal gespeichert. Klicke auf "Bearbeiten" um Details zu ändern, "Duplizieren" um Slides zu kopieren, oder "Löschen" um einen Slide zu entfernen.
-          </p>
-        </div>
+function SlidePreview({ slide, compact = false }: { slide: Slide; compact?: boolean }) {
+  const position = slide.textPosition === 'left' ? 'items-start text-left' : slide.textPosition === 'right' ? 'items-end text-right' : 'items-center text-center'
+  return (
+    <div className={`relative overflow-hidden rounded-2xl bg-black ${compact ? 'min-h-80' : 'min-h-[34rem]'}`}>
+      {slide.desktopImage ? <img src={slide.desktopImage} alt="" className={`absolute inset-0 h-full w-full object-cover ${slide.animationType === 'zoom' ? 'scale-105' : ''}`} /> : <div className="absolute inset-0" style={{ background: slide.backgroundColor || '#050b08' }} />}
+      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${(slide.overlayOpacity ?? 42) / 100})` }} />
+      <div className={`relative flex h-full min-h-[inherit] flex-col justify-center p-8 ${position}`} style={{ color: slide.textColor || '#fff' }}>
+        {slide.subtitle && <p className="text-xs font-black uppercase tracking-[0.3em] text-accent">{slide.subtitle}</p>}
+        <h3 className={`${compact ? 'text-3xl' : 'text-5xl'} mt-3 font-black leading-tight`}>{slide.title}</h3>
+        {slide.description && <p className="mt-4 max-w-xl text-sm leading-6 opacity-85">{stripHtml(slide.description)}</p>}
+        {slide.ctaText && <span className="mt-6 inline-flex rounded-full bg-accent px-5 py-3 text-sm font-black text-accent-foreground">{slide.ctaText}</span>}
       </div>
     </div>
   )
+}
+
+function Field({ label, value, onChange, type = 'text', required = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) {
+  return <label className="space-y-1 text-sm font-bold"><span>{label}</span><input required={required} type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-border bg-card px-3 py-2" /></label>
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="space-y-1 text-sm font-bold"><span>{label}</span><input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-border bg-card" /></label>
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-border bg-card p-4"><div className="text-xs font-black uppercase text-muted-foreground">{label}</div><div className="mt-2 text-2xl font-black">{value}</div></div>
+}
+
+function Meta({ label, value }: { label: string; value: string }) {
+  return <div><span>{label}</span><p className="font-black text-foreground">{value}</p></div>
+}
+
+function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} disabled={disabled} title={label} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:border-accent disabled:opacity-40">{children}</button>
 }
 
 function stripHtml(value: string) {

@@ -50,6 +50,9 @@ export default function OrdersPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | ''; text: string }>({ type: '', text: '' })
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const initialSearch = params.get('search')
+    if (initialSearch) setSearchTerm(initialSearch)
     loadOrders()
   }, [])
 
@@ -75,7 +78,7 @@ export default function OrdersPage() {
   }
 
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = String(order.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       `${order.firstName || ''} ${order.lastName || ''} ${order.email || ''} ${order.customerId || ''}`.toLowerCase().includes(searchTerm.toLowerCase())
     const filterStatus: Record<string, string> = {
       PAID: 'Bezahlt',
@@ -262,7 +265,7 @@ export default function OrdersPage() {
                     <td className="py-3 px-4">
                       <div className="font-semibold">{formatMoney(order.totalAmount ?? order.totalPrice ?? 0)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {order.tax > 0 ? `MwSt. ${formatMoney(order.tax)} / ` : ''}Versand {formatMoney(order.shippingCost || 0)}
+                        {(order.tax || 0) > 0 ? `MwSt. ${formatMoney(order.tax || 0)} / ` : ''}Versand {formatMoney(order.shippingCost || 0)}
                       </div>
                     </td>
                     <td className="py-3 px-4">

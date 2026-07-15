@@ -16,8 +16,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const { id } = await params
+  const orderId = Number(id)
+  if (!Number.isFinite(orderId) || orderId <= 0) {
+    return NextResponse.json({ error: 'Ungültige Bestellung.' }, { status: 400 })
+  }
+
   const body = await request.json()
-  const allowed = {
+  const allowed = Object.fromEntries(Object.entries({
     status: body.status,
     paymentStatus: body.paymentStatus,
     trackingNumber: body.trackingNumber,
@@ -28,18 +33,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     adminNote: body.adminNote,
     customerNote: body.customerNote,
     paymentDate: body.paymentDate,
-  }
-  let order = updateStoredOrder(Number(id), allowed)
+  }).filter(([, value]) => value !== undefined))
+
+  let order = updateStoredOrder(orderId, allowed)
 
   if (!order && db) {
-    const dbUpdate: Record<string, unknown> = {
-      status: body.status,
-      paymentStatus: body.paymentStatus,
-      trackingNumber: body.trackingNumber || '',
-      internalNotes: body.adminNote || '',
-      notes: body.customerNote || '',
-      updatedAt: new Date(),
-    }
+    const dbUpdate: Record<string, unknown> = { updatedAt: new Date() }
+    if (body.status !== undefined) dbUpdate.status = body.status
+    if (body.paymentStatus !== undefined) dbUpdate.paymentStatus = body.paymentStatus
+    if (body.trackingNumber !== undefined) dbUpdate.trackingNumber = body.trackingNumber || ''
+    if (body.adminNote !== undefined) dbUpdate.internalNotes = body.adminNote || ''
+    if (body.customerNote !== undefined) dbUpdate.notes = body.customerNote || ''
     if (body.estimatedDeliveryDate) {
       dbUpdate.estimatedDelivery = new Date(body.estimatedDeliveryDate)
     }
@@ -47,10 +51,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const updatedRows = await db
       .update(orderTable)
       .set(dbUpdate)
-      .where(eq(orderTable.id, Number(id)))
+      .where(eq(orderTable.id, orderId))
       .returning()
 
-    order = updatedRows[0] as typeof order
+    order = updatedRows[0] as unknown as typeof order
   }
 
   if (!order) {

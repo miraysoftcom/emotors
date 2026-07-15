@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
       ort,
       land,
       produktinteresse,
+      purchasedVehicle,
       nachricht,
       recaptchaToken,
     } = body
@@ -109,18 +110,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const serviceVehicle = String(purchasedVehicle || '').trim()
+
     createCustomerRequest({
       type: 'service',
       email: email.trim().toLowerCase(),
       name: `${vorname.trim()} ${nachname.trim()}`.trim(),
       phone: telefon?.trim() || '',
       subject: produktinteresse || 'Kontaktanfrage',
-      message: nachricht.trim(),
+      message: serviceVehicle ? `Gekauftes Fahrzeug: ${serviceVehicle}\n\n${nachricht.trim()}` : nachricht.trim(),
       payload: {
         firma: firma?.trim() || '',
         plz: plz?.trim() || '',
         ort: ort?.trim() || '',
         land: land?.trim() || 'Schweiz',
+        purchasedVehicle: serviceVehicle,
         source: 'contact_form',
       },
     })
