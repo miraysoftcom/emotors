@@ -35,6 +35,9 @@ export interface HeroSettings {
   desktopImage: string
   tabletImage: string
   mobileImage: string
+  lightDesktopImage: string
+  lightTabletImage: string
+  lightMobileImage: string
   imageAlt: string
   imagePosition: HeroPosition
   customImagePosition: string
@@ -42,21 +45,28 @@ export interface HeroSettings {
   imageZoom: number
   overlayEnabled: boolean
   overlayColor: string
+  lightOverlayColor: string
   overlayOpacity: number
+  lightOverlayOpacity: number
   overlayOpacityMobile: number
+  lightOverlayOpacityMobile: number
   gradientEnabled: boolean
   gradientFrom: string
   gradientTo: string
+  lightGradientFrom: string
+  lightGradientTo: string
   gradientDirection: string
   eyebrowEnabled: boolean
   eyebrow: string
   eyebrowColor: string
+  lightEyebrowColor: string
   eyebrowFontSize: number
   eyebrowFontWeight: number
   eyebrowLetterSpacing: number
   eyebrowUppercase: boolean
   title: string
   titleColor: string
+  lightTitleColor: string
   titleFontFamily: string
   titleDesktopSize: number
   titleTabletSize: number
@@ -68,6 +78,7 @@ export interface HeroSettings {
   descriptionEnabled: boolean
   description: string
   descriptionColor: string
+  lightDescriptionColor: string
   descriptionFontSize: number
   descriptionLineHeight: number
   descriptionMaxWidth: number
@@ -95,6 +106,9 @@ export const defaultHeroSettings: HeroSettings = {
   desktopImage: '/hero-background.png',
   tabletImage: '/hero-background.png',
   mobileImage: '/hero-background.png',
+  lightDesktopImage: '/hero-background-hell.png',
+  lightTabletImage: '/hero-background-hell.png',
+  lightMobileImage: '/hero-background-hell.png',
   imageAlt: 'MK-eMotors Dornach Elektromobilität vor Schweizer Stadtpanorama',
   imagePosition: 'center',
   customImagePosition: '',
@@ -102,21 +116,28 @@ export const defaultHeroSettings: HeroSettings = {
   imageZoom: 1,
   overlayEnabled: true,
   overlayColor: '#000000',
+  lightOverlayColor: '#ffffff',
   overlayOpacity: 0.66,
+  lightOverlayOpacity: 0.24,
   overlayOpacityMobile: 0.72,
+  lightOverlayOpacityMobile: 0.34,
   gradientEnabled: true,
   gradientFrom: 'rgba(0,0,0,0.72)',
   gradientTo: 'rgba(0,0,0,0.38)',
+  lightGradientFrom: 'rgba(255,255,255,0.38)',
+  lightGradientTo: 'rgba(255,255,255,0.12)',
   gradientDirection: 'to bottom',
   eyebrowEnabled: true,
   eyebrow: 'WILLKOMMEN',
   eyebrowColor: '#22c55e',
+  lightEyebrowColor: '#f97316',
   eyebrowFontSize: 14,
   eyebrowFontWeight: 800,
   eyebrowLetterSpacing: 4,
   eyebrowUppercase: true,
   title: 'MK-eMotors\nDornach',
   titleColor: '#ffffff',
+  lightTitleColor: '#111827',
   titleFontFamily: 'Inter, Helvetica, Arial, sans-serif',
   titleDesktopSize: 88,
   titleTabletSize: 68,
@@ -128,6 +149,7 @@ export const defaultHeroSettings: HeroSettings = {
   descriptionEnabled: true,
   description: 'Entdecken Sie die Zukunft der Fortbewegung mit unserer exklusiven Kollektion hochwertiger Elektromobilität.',
   descriptionColor: 'rgba(255,255,255,0.78)',
+  lightDescriptionColor: 'rgba(17,24,39,0.78)',
   descriptionFontSize: 20,
   descriptionLineHeight: 1.45,
   descriptionMaxWidth: 720,

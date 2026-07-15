@@ -8,6 +8,7 @@ import type { HeroButtonSettings, HeroSettings } from '@/lib/hero-settings-store
 import { HtmlEditor } from '@/components/admin/HtmlEditor'
 
 type PreviewMode = 'desktop' | 'tablet' | 'mobile'
+type HeroImageField = 'desktopImage' | 'tabletImage' | 'mobileImage' | 'lightDesktopImage' | 'lightTabletImage' | 'lightMobileImage'
 
 const emptyButton = (index: number): HeroButtonSettings => ({
   id: `button-${Date.now()}-${index}`,
@@ -97,7 +98,7 @@ export default function AdminHeroPage() {
     }
   }
 
-  const uploadImage = async (field: 'desktopImage' | 'tabletImage' | 'mobileImage', event: ChangeEvent<HTMLInputElement>) => {
+  const uploadImage = async (field: HeroImageField, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
@@ -183,6 +184,27 @@ export default function AdminHeroPage() {
             </div>
             <Input label="Eigene Position" value={settings.customImagePosition} onChange={(customImagePosition) => update({ customImagePosition })} placeholder="z.B. 50% 42%" />
             <Range label="Zoom" value={settings.imageZoom} min={1} max={1.6} step={0.05} onChange={(imageZoom) => update({ imageZoom })} />
+          </Panel>
+
+          <Panel title="Hell Theme Hero">
+            <p className="text-sm leading-6 text-slate-400">
+              Diese Werte gelten nur, wenn Kunden die helle Seite nutzen. Leere Werte fallen automatisch auf die normalen Hero-Einstellungen zurück.
+            </p>
+            <UploadField label="Hell Desktop Bild" field="lightDesktopImage" value={settings.lightDesktopImage} uploading={uploadingField === 'lightDesktopImage'} onUpload={uploadImage} onChange={(value) => update({ lightDesktopImage: value })} />
+            <UploadField label="Hell Tablet Bild" field="lightTabletImage" value={settings.lightTabletImage} uploading={uploadingField === 'lightTabletImage'} onUpload={uploadImage} onChange={(value) => update({ lightTabletImage: value })} />
+            <UploadField label="Hell Mobile Bild" field="lightMobileImage" value={settings.lightMobileImage} uploading={uploadingField === 'lightMobileImage'} onUpload={uploadImage} onChange={(value) => update({ lightMobileImage: value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <Color label="Overlay Hell" value={settings.lightOverlayColor} onChange={(lightOverlayColor) => update({ lightOverlayColor })} />
+              <Color label="Eyebrow Hell" value={settings.lightEyebrowColor} onChange={(lightEyebrowColor) => update({ lightEyebrowColor })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Color label="Titel Hell" value={settings.lightTitleColor} onChange={(lightTitleColor) => update({ lightTitleColor })} />
+              <Color label="Text Hell" value={settings.lightDescriptionColor} onChange={(lightDescriptionColor) => update({ lightDescriptionColor })} />
+            </div>
+            <Range label="Hell Desktop Opazität" value={settings.lightOverlayOpacity} min={0} max={0.9} step={0.01} onChange={(lightOverlayOpacity) => update({ lightOverlayOpacity })} />
+            <Range label="Hell Mobile Opazität" value={settings.lightOverlayOpacityMobile} min={0} max={0.95} step={0.01} onChange={(lightOverlayOpacityMobile) => update({ lightOverlayOpacityMobile })} />
+            <Input label="Hell Gradient von" value={settings.lightGradientFrom} onChange={(lightGradientFrom) => update({ lightGradientFrom })} />
+            <Input label="Hell Gradient bis" value={settings.lightGradientTo} onChange={(lightGradientTo) => update({ lightGradientTo })} />
           </Panel>
 
           <Panel title="Overlay">
@@ -355,10 +377,10 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 
 function UploadField({ label, field, value, uploading, onUpload, onChange }: {
   label: string
-  field: 'desktopImage' | 'tabletImage' | 'mobileImage'
+  field: HeroImageField
   value: string
   uploading: boolean
-  onUpload: (field: 'desktopImage' | 'tabletImage' | 'mobileImage', event: ChangeEvent<HTMLInputElement>) => void
+  onUpload: (field: HeroImageField, event: ChangeEvent<HTMLInputElement>) => void
   onChange: (value: string) => void
 }) {
   return (

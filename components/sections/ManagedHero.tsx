@@ -4,13 +4,27 @@ import { type MouseEvent, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { TestDriveModal } from '@/components/modals/TestDriveModal'
+import { useTheme } from '@/components/providers/ThemeProvider'
 import type { HeroSettings } from '@/lib/hero-settings-store'
 
 export function ManagedHero({ settings }: { settings: HeroSettings }) {
   const [testDriveOpen, setTestDriveOpen] = useState(false)
+  const { resolvedTheme } = useTheme()
   if (!settings.enabled) return null
 
+  const isLightTheme = resolvedTheme === 'hell'
   const imagePosition = settings.customImagePosition || settings.imagePosition
+  const desktopImage = isLightTheme ? settings.lightDesktopImage || settings.desktopImage : settings.desktopImage
+  const tabletImage = isLightTheme ? settings.lightTabletImage || settings.tabletImage || desktopImage : settings.tabletImage || desktopImage
+  const mobileImage = isLightTheme ? settings.lightMobileImage || settings.mobileImage || desktopImage : settings.mobileImage || desktopImage
+  const overlayColor = isLightTheme ? settings.lightOverlayColor || settings.overlayColor : settings.overlayColor
+  const overlayOpacity = isLightTheme ? settings.lightOverlayOpacity ?? settings.overlayOpacity : settings.overlayOpacity
+  const overlayOpacityMobile = isLightTheme ? settings.lightOverlayOpacityMobile ?? settings.overlayOpacityMobile : settings.overlayOpacityMobile
+  const gradientFrom = isLightTheme ? settings.lightGradientFrom || settings.gradientFrom : settings.gradientFrom
+  const gradientTo = isLightTheme ? settings.lightGradientTo || settings.gradientTo : settings.gradientTo
+  const eyebrowColor = isLightTheme ? settings.lightEyebrowColor || settings.eyebrowColor : settings.eyebrowColor
+  const titleColor = isLightTheme ? settings.lightTitleColor || settings.titleColor : settings.titleColor
+  const descriptionColor = isLightTheme ? settings.lightDescriptionColor || settings.descriptionColor : settings.descriptionColor
   const activeButtons = [...settings.buttons]
     .filter((button) => button.active)
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -27,15 +41,15 @@ export function ManagedHero({ settings }: { settings: HeroSettings }) {
         ['--hero-mobile-height' as string]: `${settings.heightMobile}vh`,
         ['--hero-title-tablet' as string]: `${settings.titleTabletSize}px`,
         ['--hero-title-mobile' as string]: `${settings.titleMobileSize}px`,
-        ['--hero-overlay-mobile' as string]: String(settings.overlayOpacityMobile),
+        ['--hero-overlay-mobile' as string]: String(overlayOpacityMobile),
       }}
       aria-label="Startseiten Hero"
     >
       <picture className="absolute inset-0 -z-30">
-        <source media="(max-width: 640px)" srcSet={settings.mobileImage || settings.desktopImage} />
-        <source media="(max-width: 1024px)" srcSet={settings.tabletImage || settings.desktopImage} />
+        <source media="(max-width: 640px)" srcSet={mobileImage} />
+        <source media="(max-width: 1024px)" srcSet={tabletImage} />
         <img
-          src={settings.desktopImage}
+          src={desktopImage}
           alt={settings.imageAlt}
           className="h-full w-full"
           style={{
@@ -50,13 +64,13 @@ export function ManagedHero({ settings }: { settings: HeroSettings }) {
       {settings.overlayEnabled && (
         <div
           className="hero-overlay absolute inset-0 -z-20"
-          style={{ backgroundColor: settings.overlayColor, opacity: settings.overlayOpacity }}
+          style={{ backgroundColor: overlayColor, opacity: overlayOpacity }}
         />
       )}
       {settings.gradientEnabled && (
         <div
           className="absolute inset-0 -z-10"
-          style={{ backgroundImage: `linear-gradient(${settings.gradientDirection}, ${settings.gradientFrom}, ${settings.gradientTo})` }}
+          style={{ backgroundImage: `linear-gradient(${settings.gradientDirection}, ${gradientFrom}, ${gradientTo})` }}
         />
       )}
 
@@ -75,7 +89,7 @@ export function ManagedHero({ settings }: { settings: HeroSettings }) {
             transition={{ duration: 0.55 }}
             className="mb-8"
             style={{
-              color: settings.eyebrowColor,
+              color: eyebrowColor,
               fontSize: `${settings.eyebrowFontSize}px`,
               fontWeight: settings.eyebrowFontWeight,
               letterSpacing: `${settings.eyebrowLetterSpacing}px`,
@@ -92,7 +106,7 @@ export function ManagedHero({ settings }: { settings: HeroSettings }) {
           transition={{ duration: 0.65, delay: 0.08 }}
           className="hero-title mx-auto whitespace-pre-line"
           style={{
-            color: settings.titleColor,
+            color: titleColor,
             fontFamily: settings.titleFontFamily,
             fontSize: `${settings.titleDesktopSize}px`,
             fontWeight: settings.titleFontWeight,
@@ -111,7 +125,7 @@ export function ManagedHero({ settings }: { settings: HeroSettings }) {
             transition={{ duration: 0.6, delay: 0.18 }}
             className="mx-auto mt-8"
             style={{
-              color: settings.descriptionColor,
+              color: descriptionColor,
               fontSize: `${settings.descriptionFontSize}px`,
               lineHeight: settings.descriptionLineHeight,
               maxWidth: `${settings.descriptionMaxWidth}px`,
