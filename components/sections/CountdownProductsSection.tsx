@@ -100,12 +100,16 @@ export function CountdownProductsSection({ products, compact = false }: { produc
 
       <div className={`grid gap-5 ${compact ? '' : 'lg:grid-cols-3'}`}>
         {visibleProducts.map((product, index) => (
-          <CountdownDealCard
-            key={product.id}
-            product={product}
-            timeLeft={timeLeft}
-            featured={compact || index === 0}
-          />
+          compact ? (
+            <CompactCountdownDealCard key={product.id} product={product} timeLeft={timeLeft} />
+          ) : (
+            <CountdownDealCard
+              key={product.id}
+              product={product}
+              timeLeft={timeLeft}
+              featured={index === 0}
+            />
+          )
         ))}
       </div>
     </>
@@ -113,7 +117,7 @@ export function CountdownProductsSection({ products, compact = false }: { produc
 
   if (compact) {
     return (
-      <div className="h-full rounded-3xl border border-orange-500/70 bg-background p-5 transition-colors dark:border-emerald-400/70 md:p-7">
+      <div className="h-full overflow-hidden rounded-[2rem] border border-orange-500/55 bg-background/92 p-4 shadow-luxury-md transition-colors dark:border-emerald-400/60 dark:bg-[#07110c]/92 sm:p-5 md:p-6">
         {content}
       </div>
     )
@@ -125,6 +129,180 @@ export function CountdownProductsSection({ products, compact = false }: { produc
         {content}
       </div>
     </section>
+  )
+}
+
+function CompactCountdownDealCard({ product, timeLeft }: { product: Product; timeLeft: TimeLeft }) {
+  const [selectedColor, setSelectedColor] = useState<string | null>(() => getDefaultProductVariant(product)?.name || null)
+  const [added, setAdded] = useState(false)
+  const { addItem } = useCartStore()
+
+  const defaultVariant = getDefaultProductVariant(product)
+  const activeVariant = getVariantForColor(product, selectedColor) || defaultVariant
+  const colorOptions = getColorOptions(product)
+  const pricing = resolveProductPrice({
+    ...product,
+    monthly_price: product.monthly_price ?? product.monthly_payment,
+  })
+  const variantPriceDelta = Number(activeVariant?.price_delta || 0)
+  const displayPrice = pricing.effectivePrice + variantPriceDelta
+  const baseImage = Array.isArray(product.images) ? product.images.find(Boolean) : ''
+  const displayImage = activeVariant?.image || product.image || product.image_url || product.image_primary || baseImage || ''
+  const imageBackground = getProductImageBackground(product.metadata)
+  const stock = typeof activeVariant?.stock_quantity === 'number' ? activeVariant.stock_quantity : product.stock_quantity
+  const inStock = (stock ?? 1) > 0
+  const title = product.title || product.name || 'Produkt'
+  const savings = pricing.hasDiscount ? pricing.discountPercentage : Math.max(0, Number(product.discount_percentage || 0))
+
+  const addToCart = () => {
+    if (!inStock) return
+    addItem({
+      id: String(product.id),
+      title: activeVariant?.name ? `${title} - ${activeVariant.name}` : title,
+      price: displayPrice,
+      quantity: 1,
+      image: displayImage,
+      handle: product.slug,
+      stock_quantity: stock ?? undefined,
+    })
+    setAdded(true)
+    window.setTimeout(() => setAdded(false), 1800)
+  }
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 14 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="overflow-hidden rounded-[1.6rem] border border-border/70 bg-card shadow-xl"
+    >
+      <div className="grid gap-0 lg:grid-cols-[0.92fr_1.08fr]">
+        <Link
+          href={`/produkte/${product.slug}`}
+          className="relative flex min-h-[18rem] items-center justify-center overflow-hidden border-b border-border/60 lg:border-b-0 lg:border-r"
+          style={imageBackground.style}
+        >
+          <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-black/10 bg-white/90 px-3 py-1.5 text-[0.7rem] font-black uppercase tracking-widest text-black shadow-sm">
+            Limited
+          </div>
+          {savings > 0 && (
+            <div className="absolute right-4 top-4 z-10 rounded-full bg-red-600 px-3 py-1.5 text-[0.7rem] font-black text-white shadow-lg">
+              -{savings}%
+            </div>
+          )}
+          {displayImage ? (
+            <img
+              key={displayImage}
+              src={displayImage}
+              alt={title}
+              className="h-full max-h-[19rem] w-full object-contain p-6 transition duration-500 hover:scale-[1.03]"
+            />
+          ) : (
+            <div className="grid min-h-[18rem] place-items-center text-5xl font-black text-accent">MK</div>
+          )}
+        </Link>
+
+        <div className="flex min-w-0 flex-col p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.22em] text-accent">
+              {product.brand || 'MK-eMotors'}
+            </p>
+            <span className={`rounded-full px-3 py-1 text-[0.68rem] font-black uppercase tracking-widest ${
+              inStock ? 'bg-accent/12 text-accent' : 'bg-red-500/10 text-red-400'
+            }`}>
+              {inStock ? 'Verfügbar' : 'Ausverkauft'}
+            </span>
+          </div>
+
+          <Link href={`/produkte/${product.slug}`} className="group mt-3 block">
+            <h3 className="line-clamp-2 text-2xl font-black leading-[1.08] text-foreground transition group-hover:text-accent">
+              {title}
+            </h3>
+          </Link>
+
+          <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="flex text-amber-400">
+              {[1, 2, 3, 4, 5].map((item) => <Star key={item} className="h-3.5 w-3.5 fill-current" />)}
+            </span>
+            <span className="font-semibold">Countdown Angebot</span>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-border/60 bg-background/70 p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              {pricing.hasDiscount && (
+                <span className="rounded bg-secondary px-2 py-1 text-sm font-black text-muted-foreground line-through decoration-red-500 decoration-2">
+                  {pricing.formattedRegularPrice}
+                </span>
+              )}
+              <span className="text-3xl font-black text-foreground">{formatCHF(displayPrice)}</span>
+            </div>
+            <CountdownTimerGrid timeLeft={timeLeft} compact />
+          </div>
+
+          {colorOptions.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[0.68rem] font-black uppercase tracking-widest text-muted-foreground">Farbe wählen</p>
+              <div className="flex flex-wrap gap-2">
+                {colorOptions.slice(0, 5).map((color) => {
+                  const variant = getVariantForColor(product, color) as ProductVariant | null
+                  const selected = selectedColor === color
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setSelectedColor(color)}
+                      className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-black transition ${
+                        selected ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-secondary/70 hover:border-accent/60'
+                      }`}
+                      aria-label={`Farbe ${color} wählen`}
+                    >
+                      <span className="h-4 w-4 rounded-full border border-border" style={{ backgroundColor: variant?.hex || '#ffffff' }} />
+                      <span className="max-w-20 truncate">{color}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+            <button
+              type="button"
+              onClick={addToCart}
+              disabled={!inStock}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3 font-black text-accent-foreground shadow-lg shadow-accent/20 transition hover:brightness-110 disabled:opacity-50"
+            >
+              {added ? <CheckCircle2 className="h-5 w-5" /> : <ShoppingCart className="h-5 w-5" />}
+              {added ? 'Hinzugefügt' : 'In den Warenkorb'}
+            </button>
+            <Link
+              href={`/produkte/${product.slug}`}
+              className="inline-flex items-center justify-center rounded-2xl border border-border bg-secondary/70 px-5 py-3 text-sm font-black text-foreground transition hover:border-accent/60 hover:text-accent"
+            >
+              Ansehen
+            </Link>
+          </div>
+        </div>
+      </div>
+    </motion.article>
+  )
+}
+
+function CountdownTimerGrid({ timeLeft, compact = false }: { timeLeft: TimeLeft; compact?: boolean }) {
+  return (
+    <div className={`grid grid-cols-4 ${compact ? 'mt-4 gap-2' : 'gap-2 bg-background p-4'}`}>
+      {[
+        ['Tage', timeLeft.days],
+        ['Std', timeLeft.hours],
+        ['Min', timeLeft.minutes],
+        ['Sek', timeLeft.seconds],
+      ].map(([label, value]) => (
+        <div key={label} className="rounded-xl bg-red-600 p-2 text-center text-white shadow-md dark:bg-accent dark:text-accent-foreground">
+          <p className={`${compact ? 'text-lg' : 'text-xl'} font-black`}>{String(value).padStart(2, '0')}</p>
+          <p className="text-[0.58rem] font-black uppercase">{label}</p>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -257,19 +435,7 @@ function CountdownDealCard({ product, timeLeft, featured }: { product: Product; 
               <div className="px-4 py-3 text-sm font-black uppercase tracking-widest">Deal Active</div>
               <div className="bg-black px-4 py-3 text-sm font-black text-white">Save {pricing.hasDiscount ? pricing.discountPercentage : 0}%</div>
             </div>
-            <div className="grid grid-cols-4 gap-2 bg-background p-4">
-              {[
-                ['Days', timeLeft.days],
-                ['Hrs', timeLeft.hours],
-                ['Mins', timeLeft.minutes],
-                ['Secs', timeLeft.seconds],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl bg-red-600 p-2 text-center text-white shadow-md">
-                  <p className="text-xl font-black">{String(value).padStart(2, '0')}</p>
-                  <p className="text-[0.62rem] font-black uppercase">{label}</p>
-                </div>
-              ))}
-            </div>
+            <CountdownTimerGrid timeLeft={timeLeft} />
           </div>
 
           {colorOptions.length > 0 && (
