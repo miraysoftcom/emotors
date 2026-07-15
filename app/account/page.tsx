@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Bell,
@@ -293,6 +293,7 @@ export default function AccountPage() {
   const [totpCode, setTotpCode] = useState('')
   const [totpDisableCode, setTotpDisableCode] = useState('')
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
+  const appliedAccountThemeRef = useRef('')
   const { sessionLoading, authenticatedUser, isAuthenticated, logout } = useAuthStatus()
   const { resolvedTheme, setTheme } = useTheme()
   const { items: favoriteItems, removeFavorite } = useFavoritesStore()
@@ -319,10 +320,14 @@ export default function AccountPage() {
   }, [])
 
   useEffect(() => {
-    if (accountData?.account.theme && accountData.account.theme !== resolvedTheme) {
-      setTheme(accountData.account.theme)
+    const accountTheme = accountData?.account.theme
+    const accountKey = accountData?.account.email || effectiveEmail || ''
+    const themeKey = `${accountKey}:${accountTheme || ''}`
+    if (accountTheme && appliedAccountThemeRef.current !== themeKey) {
+      appliedAccountThemeRef.current = themeKey
+      if (accountTheme !== resolvedTheme) setTheme(accountData.account.theme)
     }
-  }, [accountData?.account.theme, resolvedTheme, setTheme])
+  }, [accountData?.account.email, accountData?.account.theme, effectiveEmail, resolvedTheme, setTheme])
 
   useEffect(() => {
     if (!effectiveEmail) return

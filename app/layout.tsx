@@ -48,8 +48,11 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'dark',
-  themeColor: [{ media: '(prefers-color-scheme: dark)', color: '#07110d' }],
+  colorScheme: 'dark light',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#07110d' },
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+  ],
   userScalable: true,
 }
 
@@ -60,8 +63,12 @@ try {
   const resolved = stored === 'hell' ? 'hell' : 'dunkel';
   document.documentElement.classList.toggle('dark', resolved !== 'hell');
   document.documentElement.classList.toggle('light', resolved === 'hell');
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.style.colorScheme = resolved === 'hell' ? 'light' : 'dark';
 } catch (error) {
   document.documentElement.classList.add('dark');
+  document.documentElement.dataset.theme = 'dunkel';
+  document.documentElement.style.colorScheme = 'dark';
 }
 `
 
