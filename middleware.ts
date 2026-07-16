@@ -8,6 +8,17 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Login must stay public; otherwise an unauthenticated admin can never create
+  // the first session. The login slider GET is also public because it renders
+  // the login screen before a session exists. Mutations remain protected below.
+  if (pathname === '/api/admin/login') {
+    return NextResponse.next()
+  }
+
+  if (pathname === '/api/admin/login-slider' && request.method === 'GET') {
+    return NextResponse.next()
+  }
+
   // Protect admin pages and admin API routes from unauthenticated browser access.
   // API handlers still validate the session token server-side.
   if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {

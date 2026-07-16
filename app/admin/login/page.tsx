@@ -49,8 +49,8 @@ export default function AdminLoginPage() {
 
   useEffect(() => {
     fetch('/api/admin/login-slider')
-      .then((response) => response.json())
-      .then((data) => setSlider(data))
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setSlider(isValidSliderSettings(data) ? data : fallbackSlider))
       .catch(() => setSlider(fallbackSlider))
   }, [])
 
@@ -250,7 +250,8 @@ export default function AdminLoginPage() {
 
 function activeSlides(settings: AdminLoginSliderSettings) {
   const now = Date.now()
-  const slides = settings.slides
+  const source = Array.isArray(settings?.slides) ? settings.slides : fallbackSlider.slides
+  const slides = source
     .filter((slide: AdminLoginSlide) => {
       if (!slide.active) return false
       if (slide.startsAt && new Date(slide.startsAt).getTime() > now) return false
@@ -259,4 +260,10 @@ function activeSlides(settings: AdminLoginSliderSettings) {
     })
     .sort((a, b) => a.sortOrder - b.sortOrder)
   return slides.length > 0 ? slides : fallbackSlider.slides
+}
+
+function isValidSliderSettings(value: unknown): value is AdminLoginSliderSettings {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Partial<AdminLoginSliderSettings>
+  return Array.isArray(settings.slides)
 }
